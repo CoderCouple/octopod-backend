@@ -2,7 +2,7 @@
 name = "octopod-backend"
 version = "0.1.0"
 description = "Octopod Backend API Service"
-authors = ["Sunil Tiwari <sunil@context0.ai>"]
+authors = ["Sunil Tiwari <sunil28071987@gmail.com>","Payal Fofadiya <fofadiyapayal@gmail.com>"]
 readme = "README.md"
 package-mode = false
 
@@ -32,6 +32,8 @@ isort = "^5.13.0"
 mypy = "^1.9.0"
 ruff = "^0.8.0"
 debugpy = "^1.8.0"
+aiosqlite = "^0.22.1"
+greenlet = "^3.4.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

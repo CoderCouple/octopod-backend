@@ -4,6 +4,8 @@ from typing import Optional
 
 class Settings(BaseSettings):
     app_name: str = "Octopod Backend"
+    app_desc: str = "Crowdsourced Org Graph System"
+    app_version: str = "0.0.1"
     debug: bool = False
     environment: str = "development"
     
@@ -18,12 +20,6 @@ class Settings(BaseSettings):
     postgres_db: str = "octopod_db"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
-    
-    # MongoDB Configuration
-    mongodb_url: Optional[str] = None
-    mongodb_host: str = "localhost"
-    mongodb_port: int = 27017
-    mongodb_db: str = "octopod"
     
     # API Configuration
     api_prefix: str = "/api/v1"
@@ -51,12 +47,5 @@ class Settings(BaseSettings):
         if self.database_url:
             return self.database_url
         return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-    
-    @property
-    def mongo_connection_string(self) -> str:
-        if self.mongodb_url:
-            return self.mongodb_url
-        return f"mongodb://{self.mongodb_host}:{self.mongodb_port}"
-
 
 settings = Settings()

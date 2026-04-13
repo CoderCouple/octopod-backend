@@ -1,16 +1,26 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from alembic import context
-import os
 import sys
+from logging.config import fileConfig
 from pathlib import Path
+
+from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from app.settings import settings
-from app.db.base import Base
+from app.db.base import Base  # noqa: E402
+from app.settings import settings  # noqa: E402
+
+# Import all models so Base.metadata knows about them
+from app.model.career_event_model import CareerEvent  # noqa: E402, F401
+from app.model.claim_evidence_model import ClaimEvidence  # noqa: E402, F401
+from app.model.contributor_score_model import ContributorScore  # noqa: E402, F401
+from app.model.employee_model import Employee  # noqa: E402, F401
+from app.model.employment_model import Employment  # noqa: E402, F401
+from app.model.event_log_model import EventLog  # noqa: E402, F401
+from app.model.organization_model import Organization  # noqa: E402, F401
+from app.model.reporting_claim_model import ReportingClaim  # noqa: E402, F401
+from app.model.reporting_relationship_model import ReportingRelationship  # noqa: E402, F401
 
 # this is the Alembic Config object
 config = context.config

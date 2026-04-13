@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    depends_on:
+      - db
+    environment:
+      POETRY_VIRTUALENVS_CREATE: "false"
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  # PostgreSQL database
+  db:
+    image: postgres:16
+    container_name: octopod-postgres
+    environment:
+      POSTGRES_DB: octopod_db
+      POSTGRES_USER: octopod
+      POSTGRES_PASSWORD: octopod
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    restart: unless-stopped
+
+  # pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: octopod-pgadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@octopod.dev
+      PGADMIN_DEFAULT_PASSWORD: octopod
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+  pgadmin_data:

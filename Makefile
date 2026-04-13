@@ -1,15 +1,22 @@
-.PHONY: help install dev run test lint format clean migrate
+.PHONY: help install dev run test lint format clean migrate docker-up docker-down docker-build docker-logs docker-db
 
 help:
 	@echo "Available commands:"
-	@echo "  install    Install dependencies"
-	@echo "  dev        Run development server"
-	@echo "  run        Run production server"
-	@echo "  test       Run tests"
-	@echo "  lint       Run linters"
-	@echo "  format     Format code"
-	@echo "  clean      Clean cache files"
-	@echo "  migrate    Run database migrations"
+	@echo "  install       Install dependencies"
+	@echo "  dev           Run development server"
+	@echo "  run           Run production server"
+	@echo "  test          Run tests"
+	@echo "  lint          Run linters"
+	@echo "  format        Format code"
+	@echo "  clean         Clean cache files"
+	@echo "  migrate       Run database migrations"
+	@echo ""
+	@echo "Docker commands:"
+	@echo "  docker-up     Start all services"
+	@echo "  docker-down   Stop all services"
+	@echo "  docker-build  Build and start all services"
+	@echo "  docker-logs   Tail logs"
+	@echo "  docker-db     Start only PostgreSQL + pgAdmin"
 
 install:
 	poetry install
@@ -51,3 +58,19 @@ pre-commit:
 
 pre-commit-run:
 	poetry run pre-commit run --all-files
+
+# Docker commands
+docker-up:
+	docker-compose up
+
+docker-down:
+	docker-compose down
+
+docker-build:
+	docker-compose up --build
+
+docker-logs:
+	docker-compose logs -f
+
+docker-db:
+	docker-compose up db pgadmin
