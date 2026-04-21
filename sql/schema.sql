@@ -290,6 +290,99 @@ ALTER TABLE "claim_evidence"
   ADD CONSTRAINT "claim_evidence_claim_id_fk"
     FOREIGN KEY ("claim_id") REFERENCES "reporting_claim" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
 
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "developer_profile" (
+    "id"                    TEXT PRIMARY KEY DEFAULT 'dp_' || gen_random_uuid() NOT NULL,
+    "employee_id"           TEXT UNIQUE,
+    "github_username"       VARCHAR(255) UNIQUE,
+    "linkedin_url"          VARCHAR(2048) UNIQUE,
+    "huggingface_username"  VARCHAR(255) UNIQUE,
+    "email_hint"            VARCHAR(320),
+    "ingestion_status"      VARCHAR(30) NOT NULL DEFAULT 'pending',
+    "last_ingested_at"      TIMESTAMPTZ,
+    "is_deleted"            BOOLEAN DEFAULT FALSE NOT NULL,
+    "created_by"            TEXT,
+    "updated_by"            TEXT,
+    "created_at"            TIMESTAMPTZ DEFAULT now() NOT NULL,
+    "updated_at"            TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "platform_profile" (
+    "id"                    TEXT PRIMARY KEY DEFAULT 'pp_' || gen_random_uuid() NOT NULL,
+    "developer_profile_id"  TEXT NOT NULL,
+    "platform"              VARCHAR(30) NOT NULL,
+    "platform_username"     VARCHAR(255),
+    "raw_data"              JSONB DEFAULT '{}'::jsonb,
+    "extracted_data"        JSONB DEFAULT '{}'::jsonb,
+    "fetch_status"          VARCHAR(30) NOT NULL DEFAULT 'pending',
+    "error_message"         TEXT,
+    "fetched_at"            TIMESTAMPTZ,
+    UNIQUE("developer_profile_id", "platform")
+);
+
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "cohesive_profile" (
+    "id"                    TEXT PRIMARY KEY DEFAULT 'cp_' || gen_random_uuid() NOT NULL,
+    "developer_profile_id"  TEXT NOT NULL UNIQUE,
+    "display_name"          VARCHAR(255),
+    "bio"                   TEXT,
+    "headline"              TEXT,
+    "location"              VARCHAR(500),
+    "avatar_url"            VARCHAR(2048),
+    "company"               VARCHAR(255),
+    "website"               VARCHAR(2048),
+    "total_repos"           INTEGER DEFAULT 0,
+    "total_stars"           INTEGER DEFAULT 0,
+    "total_contributions"   INTEGER DEFAULT 0,
+    "total_followers"       INTEGER DEFAULT 0,
+    "total_hf_models"       INTEGER DEFAULT 0,
+    "total_hf_datasets"     INTEGER DEFAULT 0,
+    "total_hf_spaces"       INTEGER DEFAULT 0,
+    "total_hf_downloads"    INTEGER DEFAULT 0,
+    "total_papers"          INTEGER DEFAULT 0,
+    "languages"             JSONB DEFAULT '[]'::jsonb,
+    "skills"                JSONB DEFAULT '[]'::jsonb,
+    "topics"                JSONB DEFAULT '[]'::jsonb,
+    "years_of_experience"   INTEGER,
+    "current_title"         VARCHAR(255),
+    "current_company"       VARCHAR(255),
+    "job_history"           JSONB DEFAULT '[]'::jsonb,
+    "embedding_text"        TEXT,
+    "embedding_vector_id"   VARCHAR(255),
+    "source_priority"       JSONB DEFAULT '{}'::jsonb,
+    "merged_at"             TIMESTAMPTZ
+);
+
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "profile_ranking" (
+    "id"                        TEXT PRIMARY KEY DEFAULT 'pr_' || gen_random_uuid() NOT NULL,
+    "cohesive_profile_id"       TEXT NOT NULL UNIQUE,
+    "github_activity_score"     NUMERIC(5, 4) DEFAULT 0,
+    "technical_influence_score" NUMERIC(5, 4) DEFAULT 0,
+    "hiring_fit_score"          NUMERIC(5, 4) DEFAULT 0,
+    "experience_score"          NUMERIC(5, 4) DEFAULT 0,
+    "skills_breadth_score"      NUMERIC(5, 4) DEFAULT 0,
+    "recency_score"             NUMERIC(5, 4) DEFAULT 0,
+    "oss_contribution_score"    NUMERIC(5, 4) DEFAULT 0,
+    "hf_impact_score"           NUMERIC(5, 4) DEFAULT 0,
+    "composite_score"           NUMERIC(5, 4) DEFAULT 0,
+    "weight_config"             JSONB DEFAULT '{}'::jsonb,
+    "computed_at"               TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE "platform_profile"
+  ADD CONSTRAINT "pp_developer_profile_id_fk"
+    FOREIGN KEY ("developer_profile_id") REFERENCES "developer_profile" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+ALTER TABLE "cohesive_profile"
+  ADD CONSTRAINT "cp_developer_profile_id_fk"
+    FOREIGN KEY ("developer_profile_id") REFERENCES "developer_profile" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
+ALTER TABLE "profile_ranking"
+  ADD CONSTRAINT "pr_cohesive_profile_id_fk"
+    FOREIGN KEY ("cohesive_profile_id") REFERENCES "cohesive_profile" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION;
+
 -- =========================
 -- SEED DATA
 -- =========================

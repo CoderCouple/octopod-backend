@@ -32,6 +32,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"Environment: {settings.environment}")
     logger.info(f"Debug mode: {settings.debug}")
 
+    try:
+        from app.db.qdrant_client import ensure_collection
+
+        await ensure_collection()
+    except Exception:
+        logger.warning("Qdrant collection setup skipped (Qdrant may be unavailable)")
+
     yield
 
     logger.info("Shutting down application")

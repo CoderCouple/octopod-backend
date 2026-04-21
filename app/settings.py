@@ -1,5 +1,5 @@
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -8,40 +8,97 @@ class Settings(BaseSettings):
     app_version: str = "0.0.1"
     debug: bool = False
     environment: str = "development"
-    
+
     # Server Configuration
     host: str = "0.0.0.0"
     port: int = 8000
-    
+
     # Database Configuration
-    database_url: Optional[str] = None
+    database_url: str | None = None
     postgres_user: str = "octopod"
     postgres_password: str = "octopod"
     postgres_db: str = "octopod_db"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
-    
+
     # API Configuration
     api_prefix: str = "/api/v1"
     allowed_origins: list[str] = ["*"]
-    
+
+    # External API Keys
+    github_token: str | None = None
+    proxycurl_api_key: str | None = None
+    huggingface_token: str | None = None
+
+    # Qdrant
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_grpc_port: int = 6334
+
+    # Embedding
+    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_provider: str = "sentence_transformer"
+
+    # Reranker
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_enabled: bool = True
+
+    # GitHub Ingestion
+    github_tokens: str = ""  # Comma-separated PATs for token rotation
+    gh_graphql_endpoint: str = "https://api.github.com/graphql"
+    gh_rest_endpoint: str = "https://api.github.com"
+    gh_concurrency: int = 8
+    gh_max_repos_per_user: int = 100
+    gh_max_commits_per_repo: int = 50
+    gh_max_events_per_user: int = 100
+    gh_skip_forks: bool = True
+    gh_refresh_after_hours: int = 24
+    gh_max_retries: int = 5
+    gh_base_backoff: float = 2.0
+    gh_request_timeout: float = 30.0
+
+    # HuggingFace Ingestion
+    hf_tokens: str = ""  # Comma-separated tokens
+    hf_endpoint: str = "https://huggingface.co"
+    hf_concurrency: int = 8
+    hf_max_models_per_user: int = 500
+    hf_max_datasets_per_user: int = 500
+    hf_refresh_after_hours: int = 24
+    hf_max_retries: int = 5
+    hf_base_backoff: float = 2.0
+    hf_request_timeout: float = 30.0
+
+    # Ingestion DB pool (asyncpg direct connection for bulk ingestion)
+    ingest_db_pool_min: int = 2
+    ingest_db_pool_max: int = 10
+
     # Security
     secret_key: str = "your-secret-key-here-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
-    
+
     @property
     def async_database_url(self) -> str:
         if self.database_url:
             return self.database_url.replace("postgresql://", "postgresql+asyncpg://")
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-    
+
+    @property
+    def asyncpg_dsn(self) -> str:
+        """Direct asyncpg DSN for bulk ingestion (no SQLAlchemy prefix)."""
+        if self.database_url:
+            return self.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        return (
+            f"postgresql://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
     @property
     def sync_database_url(self) -> str:
         if self.database_url:

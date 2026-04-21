@@ -11,3 +11,5 @@ class Tags(str, Enum):
     Graph = "Graph"
     Timeline = "Timeline"
     Visibility = "Visibility"
+    DeveloperProfile = "Developer Profile"
+    Ingestion = "Ingestion"

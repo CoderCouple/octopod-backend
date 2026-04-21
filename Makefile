@@ -1,4 +1,4 @@
-.PHONY: help install dev run test lint format clean migrate docker-up docker-down docker-build docker-logs docker-db
+.PHONY: help install dev run test lint format clean migrate docker-up docker-down docker-build docker-logs docker-db gh-init-schema hf-init-schema gh-discover gh-ingest hf-discover hf-ingest ingest-status embed-profiles
 
 help:
 	@echo "Available commands:"
@@ -74,3 +74,29 @@ docker-logs:
 
 docker-db:
 	docker-compose up db pgadmin
+
+# Ingestion commands
+gh-init-schema:
+	poetry run python -m app.ingest.cli gh-init-schema
+
+hf-init-schema:
+	poetry run python -m app.ingest.cli hf-init-schema
+
+gh-discover:
+	poetry run python -m app.ingest.cli gh-discover --top 5000 --output data/gh_logins.tsv
+
+gh-ingest:
+	poetry run python -m app.ingest.cli gh-ingest --input data/gh_logins.tsv
+
+hf-discover:
+	poetry run python -m app.ingest.cli hf-discover --top 5000 --output data/hf_users.tsv
+
+hf-ingest:
+	poetry run python -m app.ingest.cli hf-ingest --input data/hf_users.tsv
+
+ingest-status:
+	poetry run python -m app.ingest.cli status
+
+embed-profiles:
+	@echo "Triggering batch embedding of all profiles..."
+	curl -s -X POST "http://localhost:8000/api/v1/developer-profile/embed-all?force=true" | python -m json.tool

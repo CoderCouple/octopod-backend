@@ -19,6 +19,7 @@ class EntityType(str, Enum):
     REPORTING_RELATIONSHIP = "reporting_relationship"
     CAREER_EVENT = "career_event"
     REPORTING_CLAIM = "reporting_claim"
+    DEVELOPER_PROFILE = "developer_profile"
 
 
 class VisibilityLevel(int, Enum):

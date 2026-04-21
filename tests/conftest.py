@@ -1,5 +1,5 @@
 import asyncio
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -12,11 +12,17 @@ from app.db.base import Base
 # Import all models so Base.metadata knows about them
 from app.model.career_event_model import CareerEvent  # noqa: F401
 from app.model.claim_evidence_model import ClaimEvidence  # noqa: F401
+
+# Developer profile models
+from app.model.cohesive_profile_model import CohesiveProfile  # noqa: F401
 from app.model.contributor_score_model import ContributorScore  # noqa: F401
+from app.model.developer_profile_model import DeveloperProfile  # noqa: F401
 from app.model.employee_model import Employee  # noqa: F401
 from app.model.employment_model import Employment  # noqa: F401
 from app.model.event_log_model import EventLog  # noqa: F401
 from app.model.organization_model import Organization  # noqa: F401
+from app.model.platform_profile_model import PlatformProfile  # noqa: F401
+from app.model.profile_ranking_model import ProfileRanking  # noqa: F401
 from app.model.reporting_claim_model import ReportingClaim  # noqa: F401
 from app.model.reporting_relationship_model import ReportingRelationship  # noqa: F401
 

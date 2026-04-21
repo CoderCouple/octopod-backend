@@ -380,6 +380,136 @@ make migrate
 - **pytest** + **pytest-asyncio** -- Testing framework
 - **Black** + **isort** + **Ruff** -- Code formatting and linting
 
+## Developer Profile Ingestion & Search
+
+Octopod includes a developer profiling system that pulls data from **GitHub**, **LinkedIn** (via Proxycurl), and **HuggingFace**, merges it into a cohesive profile, computes ranking scores, and enables semantic search via **Qdrant** vector DB.
+
+### Setup
+
+**1. Start infrastructure:**
+
+```bash
+docker compose up db qdrant -d
+```
+
+This adds a Qdrant vector database (http://localhost:6333/dashboard) alongside PostgreSQL.
+
+**2. Configure API keys** in `.env`:
+
+```env
+# Required for GitHub (60 req/hr without, 5000/hr with)
+GITHUB_TOKEN=ghp_your_personal_access_token
+
+# Required for LinkedIn profiles (paid API - https://nubela.co/proxycurl)
+PROXYCURL_API_KEY=your_key_here
+
+# Optional for HuggingFace (public API works without)
+HUGGINGFACE_TOKEN=hf_your_token_here
+
+# Qdrant (defaults work with docker compose)
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+```
+
+> **Minimum to start:** Just `GITHUB_TOKEN`. Create a free personal access token at https://github.com/settings/tokens (no special scopes needed — public data only).
+
+**3. Install dependencies and start:**
+
+```bash
+poetry install
+poetry run alembic upgrade head
+make dev
+```
+
+### Usage Flow
+
+```bash
+# 1. Create a developer profile
+curl -X POST http://localhost:8000/api/v1/developer-profile \
+  -H "Content-Type: application/json" \
+  -d '{"github_username": "torvalds", "auto_ingest": true}'
+
+# 2. Check ingestion status
+curl http://localhost:8000/api/v1/developer-profile/{id}/status
+
+# 3. Merge platform data into a cohesive profile
+curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/merge
+
+# 4. Get the merged profile
+curl http://localhost:8000/api/v1/developer-profile/{id}/cohesive
+
+# 5. Get ranking scores
+curl http://localhost:8000/api/v1/developer-profile/{id}/ranking
+
+# 6. Semantic search
+curl -X POST http://localhost:8000/api/v1/developer-profile/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "machine learning engineer with Python", "limit": 10}'
+```
+
+### Enriching profiles over time
+
+You can add platform identifiers later and re-ingest — data is merged, not replaced:
+
+```bash
+# Add LinkedIn to an existing profile
+curl -X PATCH http://localhost:8000/api/v1/developer-profile/{id} \
+  -H "Content-Type: application/json" \
+  -d '{"linkedin_url": "https://linkedin.com/in/someone"}'
+
+# Re-ingest (fetches all configured platforms)
+curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/ingest
+
+# Re-merge (combines all sources with priority rules)
+curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/merge
+```
+
+### Developer Profile Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/developer-profile` | Create profile with platform identifiers |
+| GET | `/developer-profile` | List profiles (paginated) |
+| GET | `/developer-profile/{id}` | Get profile by ID |
+| PATCH | `/developer-profile/{id}` | Update platform identifiers |
+| POST | `/developer-profile/{id}/ingest` | Trigger ingestion (202) |
+| GET | `/developer-profile/{id}/status` | Check ingestion status |
+| GET | `/developer-profile/{id}/cohesive` | Get merged profile |
+| POST | `/developer-profile/{id}/merge` | Force re-merge |
+| GET | `/developer-profile/{id}/ranking` | Get ranking scores |
+| POST | `/developer-profile/rank` | Rank profiles with custom weights |
+| POST | `/developer-profile/search` | Semantic search |
+
+### Merge Priority Rules
+
+When multiple platforms provide the same field, the winner is determined by:
+
+| Field | Priority |
+|-------|----------|
+| display_name, bio, headline | LinkedIn > GitHub > HuggingFace |
+| avatar_url | GitHub > LinkedIn > HuggingFace |
+| company | LinkedIn > GitHub |
+| skills | Union of all sources |
+| languages | GitHub (from repo stats) |
+| job_history | LinkedIn (authoritative) |
+
+### Ranking Scores
+
+8 component scores (each 0.0–1.0) combined into a weighted composite:
+
+| Component | Weight | Key Inputs |
+|-----------|--------|------------|
+| github_activity | 0.20 | contributions, repos |
+| technical_influence | 0.15 | stars, followers, downloads |
+| hiring_fit | 0.15 | skills, title, company |
+| experience | 0.15 | years of experience |
+| skills_breadth | 0.10 | unique skills + languages |
+| recency | 0.10 | days since last activity |
+| oss_contribution | 0.10 | non-fork repos, topics |
+| hf_impact | 0.05 | models, datasets, downloads |
+
+Weights are customizable via the `/rank` endpoint.
+
 ## API Documentation
 
 When running the application, interactive API documentation is available at:
