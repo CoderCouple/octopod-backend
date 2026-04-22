@@ -39,7 +39,27 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Qdrant collection setup skipped (Qdrant may be unavailable)")
 
+    # Start email outreach workers
+    try:
+        from app.outreach.send_worker import send_worker
+        from app.outreach.reply_worker import reply_worker
+
+        await send_worker.start()
+        await reply_worker.start()
+    except Exception:
+        logger.warning("Email outreach workers startup skipped")
+
     yield
+
+    # Stop email outreach workers
+    try:
+        from app.outreach.send_worker import send_worker
+        from app.outreach.reply_worker import reply_worker
+
+        await send_worker.stop()
+        await reply_worker.stop()
+    except Exception:
+        pass
 
     logger.info("Shutting down application")
 
@@ -67,6 +87,11 @@ register_exception_handlers(app)
 
 # Include routers
 app.include_router(api_router)
+
+# Tracking routes mounted at root (short URLs, not behind /api/v1)
+from app.api.v1.controller.email_tracking_api import router as tracking_router
+
+app.include_router(tracking_router)
 
 
 @app.get("/")

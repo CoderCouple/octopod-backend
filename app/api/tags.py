@@ -13,3 +13,8 @@ class Tags(str, Enum):
     Visibility = "Visibility"
     DeveloperProfile = "Developer Profile"
     Ingestion = "Ingestion"
+    Mailbox = "Mailbox"
+    EmailTemplate = "Email Template"
+    Campaign = "Campaign"
+    Tracking = "Tracking"
+    EmailEnrichment = "Email Enrichment"

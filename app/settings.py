@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     gh_request_timeout: float = 30.0
 
     # HuggingFace Ingestion
-    hf_tokens: str = ""  # Comma-separated tokens
+    huggingface_tokens: str = ""  # Comma-separated tokens
     hf_endpoint: str = "https://huggingface.co"
     hf_concurrency: int = 8
     hf_max_models_per_user: int = 500
@@ -76,6 +76,33 @@ class Settings(BaseSettings):
     secret_key: str = "your-secret-key-here-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+
+    # OAuth - Gmail
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = ""
+
+    # OAuth - Outlook
+    ms_client_id: str = ""
+    ms_client_secret: str = ""
+    ms_tenant_id: str = ""
+    ms_redirect_uri: str = ""
+
+    # SendGrid
+    sendgrid_api_key: str = ""
+    sendgrid_webhook_secret: str = ""
+
+    # Email Enrichment
+    hunter_api_key: str = ""
+    apollo_api_key: str = ""
+
+    # Email Sending Engine
+    tracking_base_url: str = "http://localhost:8000"
+    send_worker_poll_interval: int = 30
+    send_worker_batch_size: int = 50
+    default_daily_send_limit: int = 35
+    reply_check_interval: int = 300
+    token_encryption_key: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -10,6 +10,10 @@ from app.api.v1.controller.org_api import router as org_router
 from app.api.v1.controller.relationship_api import router as relationship_router
 from app.api.v1.controller.ingest_api import router as ingest_router
 from app.api.v1.controller.timeline_api import router as timeline_router
+from app.api.v1.controller.mailbox_api import router as mailbox_router
+from app.api.v1.controller.email_template_api import router as email_template_router
+from app.api.v1.controller.email_campaign_api import router as email_campaign_router
+from app.api.v1.controller.email_enrichment_api import router as email_enrichment_router
 
 router = APIRouter(prefix="/v1")
 
@@ -23,3 +27,7 @@ router.include_router(graph_router)
 router.include_router(timeline_router)
 router.include_router(developer_profile_router)
 router.include_router(ingest_router)
+router.include_router(mailbox_router)
+router.include_router(email_template_router)
+router.include_router(email_campaign_router)
+router.include_router(email_enrichment_router)

@@ -26,6 +26,16 @@ from app.model.profile_ranking_model import ProfileRanking  # noqa: F401
 from app.model.reporting_claim_model import ReportingClaim  # noqa: F401
 from app.model.reporting_relationship_model import ReportingRelationship  # noqa: F401
 
+# Email outreach models
+from app.model.mailbox_model import Mailbox  # noqa: F401
+from app.model.email_template_model import EmailTemplate  # noqa: F401
+from app.model.email_campaign_model import EmailCampaign  # noqa: F401
+from app.model.campaign_step_model import CampaignStep  # noqa: F401
+from app.model.campaign_recipient_model import CampaignRecipient  # noqa: F401
+from app.model.email_message_model import EmailMessage  # noqa: F401
+from app.model.email_event_model import EmailEvent  # noqa: F401
+from app.model.email_unsubscribe_model import EmailUnsubscribe  # noqa: F401
+
 ASYNC_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
