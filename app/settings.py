@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_provider: str = "sentence_transformer"
+    embedding_dimension: int = 384
 
     # Reranker
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
@@ -71,6 +72,26 @@ class Settings(BaseSettings):
     # Ingestion DB pool (asyncpg direct connection for bulk ingestion)
     ingest_db_pool_min: int = 2
     ingest_db_pool_max: int = 10
+
+    # LinkedIn Ingestion (Proxycurl)
+    ln_concurrency: int = 4
+    ln_rate_limit_rpm: int = 300
+    ln_daily_budget_usd: float = 50.0
+    ln_cost_per_profile: float = 0.01
+    ln_max_retries: int = 3
+    ln_request_timeout: float = 30.0
+
+    # Bridge / Profile Sync
+    bridge_concurrency: int = 8
+    bridge_batch_size: int = 200
+    bridge_since_hours: int = 24
+
+    # OpenSearch
+    opensearch_host: str = "localhost"
+    opensearch_port: int = 9200
+    opensearch_use_ssl: bool = False
+    opensearch_enabled: bool = False
+    opensearch_index: str = "octopod_profiles"
 
     # Security
     secret_key: str = "your-secret-key-here-change-in-production"

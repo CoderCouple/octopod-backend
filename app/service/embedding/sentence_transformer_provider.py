@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from app.service.embedding import EmbeddingProvider
@@ -25,8 +26,8 @@ class SentenceTransformerProvider(EmbeddingProvider):
 
     async def embed(self, text: str) -> list[float]:
         model = _get_model()
-        embedding = model.encode(text, normalize_embeddings=True)
+        embedding = await asyncio.to_thread(model.encode, text, normalize_embeddings=True)
         return embedding.tolist()
 
     def dimension(self) -> int:
-        return 384
+        return _get_model().get_sentence_embedding_dimension()

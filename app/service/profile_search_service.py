@@ -11,11 +11,13 @@ from app.api.v1.response.developer_profile_response import (
     ProfileRankingResponse,
     SearchResultResponse,
 )
-from app.db.repository.cohesive_profile_repository import CohesiveProfileRepository
+from app.db.repository.cohesive_individual_profile_repository import (
+    CohesiveIndividualProfileRepository,
+)
 from app.db.repository.profile_ranking_repository import ProfileRankingRepository
-from app.model.cohesive_profile_model import CohesiveProfile
+from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile
 from app.service.embedding import EmbeddingProvider
-from app.service.reranking import Reranker, RerankCandidate
+from app.service.reranking import RerankCandidate, Reranker
 from app.service.search.fusion import reciprocal_rank_fusion
 from app.settings import settings
 
@@ -31,7 +33,7 @@ class ProfileSearchService:
         reranker: Reranker | None = None,
     ):
         self.db = db
-        self.cp_repo = CohesiveProfileRepository(db)
+        self.cip_repo = CohesiveIndividualProfileRepository(db)
         self.pr_repo = ProfileRankingRepository(db)
         self._embedding_provider = embedding_provider
         self._qdrant_client = qdrant_client
@@ -67,7 +69,6 @@ class ProfileSearchService:
 
     @staticmethod
     def _build_qdrant_filter(filters: dict | None):
-        """Build a Qdrant Filter from request filters dict."""
         if not filters:
             return None
 
@@ -123,36 +124,36 @@ class ProfileSearchService:
         return Filter(must=conditions) if conditions else None
 
     @staticmethod
-    def _build_payload(cp: CohesiveProfile) -> dict:
-        """Build Qdrant point payload from a CohesiveProfile."""
+    def _build_payload(cip: CohesiveIndividualProfile) -> dict:
         return {
-            "cohesive_profile_id": cp.id,
-            "developer_profile_id": cp.developer_profile_id,
-            "languages": cp.languages or [],
-            "skills": cp.skills or [],
-            "total_stars": cp.total_stars or 0,
-            "years_of_experience": cp.years_of_experience or 0,
-            "location": (cp.location or "").lower(),
-            "company": (cp.company or "").lower(),
-            "topics": cp.topics or [],
-            "total_contributions": cp.total_contributions or 0,
-            "total_followers": cp.total_followers or 0,
-            "total_hf_downloads": cp.total_hf_downloads or 0,
+            "cohesive_individual_profile_id": cip.id,
+            "developer_profile_id": cip.developer_profile_id,
+            "languages": cip.languages or [],
+            "skills": cip.skills or [],
+            "total_stars": cip.total_stars or 0,
+            "years_of_experience": cip.years_of_experience or 0,
+            "location": (cip.location or "").lower(),
+            "company": (cip.company or "").lower(),
+            "topics": cip.topics or [],
+            "total_contributions": cip.total_contributions or 0,
+            "total_followers": cip.total_followers or 0,
+            "total_hf_downloads": cip.total_hf_downloads or 0,
+            "embedding_text": cip.embedding_text or "",
         }
 
-    async def upsert_profile(self, cp: CohesiveProfile) -> str:
+    async def upsert_profile(self, cip: CohesiveIndividualProfile) -> str:
         from qdrant_client.models import PointStruct
 
         provider = self._get_embedding_provider()
         client = self._get_qdrant_client()
 
-        text = cp.embedding_text or ""
+        text = cip.embedding_text or ""
         if not text:
             return ""
 
         vector = await provider.embed(text)
-        point_id = cp.embedding_vector_id or str(uuid.uuid4())
-        payload = self._build_payload(cp)
+        point_id = cip.embedding_vector_id or str(uuid.uuid4())
+        payload = self._build_payload(cip)
 
         from app.db.qdrant_client import COLLECTION_NAME
 
@@ -169,7 +170,6 @@ class ProfileSearchService:
         request: SemanticSearchRequest,
         limit: int,
     ) -> list[tuple[str, float, str]]:
-        """Vector ANN search via Qdrant. Returns (cohesive_profile_id, score, embedding_text)."""
         client = self._get_qdrant_client()
         query_filter = self._build_qdrant_filter(request.filters)
 
@@ -185,9 +185,9 @@ class ProfileSearchService:
 
         results = []
         for hit in response.points:
-            cp_id = hit.payload.get("cohesive_profile_id")
-            if cp_id:
-                results.append((cp_id, hit.score, ""))
+            cip_id = hit.payload.get("cohesive_individual_profile_id")
+            if cip_id:
+                results.append((cip_id, hit.score, hit.payload.get("embedding_text", "")))
         return results
 
     async def _keyword_search(
@@ -196,18 +196,32 @@ class ProfileSearchService:
         request: SemanticSearchRequest,
         limit: int,
     ) -> list[tuple[str, float]]:
-        """Postgres tsvector keyword search. Returns (cohesive_profile_id, ts_rank).
-        Gracefully returns [] on failure (e.g. SQLite in tests).
-        """
         try:
-            results = await self.cp_repo.keyword_search(
+            results = await self.cip_repo.keyword_search(
                 query=query,
                 limit=limit,
                 filters=request.filters,
             )
-            return [(cp.id, score) for cp, score in results]
+            return [(cip.id, score) for cip, score in results]
         except Exception:
             logger.debug("Keyword search unavailable (likely non-Postgres DB), skipping")
+            return []
+
+    async def _opensearch_search(
+        self,
+        query: str,
+        request: SemanticSearchRequest,
+        limit: int,
+    ) -> list[tuple[str, float]]:
+        """OpenSearch keyword search. Returns (profile_id, score) pairs."""
+        if not settings.opensearch_enabled:
+            return []
+        try:
+            from app.db.opensearch_client import search_profiles
+
+            return search_profiles(query, limit=limit, filters=request.filters)
+        except Exception:
+            logger.debug("OpenSearch search unavailable, skipping")
             return []
 
     async def search(self, request: SemanticSearchRequest) -> list[SearchResultResponse]:
@@ -216,32 +230,39 @@ class ProfileSearchService:
         # Step 1: Embed query
         query_vector = await provider.embed(request.query)
 
-        # Step 2: Parallel vector + keyword search (over-fetch for fusion)
+        # Step 2: Parallel vector + keyword + opensearch search
         vector_limit = min(request.limit * 15, 300)
         keyword_limit = min(request.limit * 10, 200)
+        os_limit = min(request.limit * 10, 200)
 
         vector_task = self._vector_search(query_vector, request, vector_limit)
         keyword_task = self._keyword_search(request.query, request, keyword_limit)
-        vector_hits, keyword_hits = await asyncio.gather(vector_task, keyword_task)
+        os_task = self._opensearch_search(request.query, request, os_limit)
 
-        # Step 3: RRF fusion
-        vector_for_rrf = [(cp_id, score) for cp_id, score, _text in vector_hits]
-        fused = reciprocal_rank_fusion(vector_for_rrf, keyword_hits)
+        vector_hits, keyword_hits, os_hits = await asyncio.gather(
+            vector_task, keyword_task, os_task
+        )
+
+        # Step 3: N-way RRF fusion
+        vector_for_rrf = [(cip_id, score) for cip_id, score, _text in vector_hits]
+        ranked_lists = [vector_for_rrf, keyword_hits]
+        if os_hits:
+            ranked_lists.append(os_hits)
+        fused = reciprocal_rank_fusion(*ranked_lists)
 
         # Build id->embedding_text map from vector hits for reranking
         id_to_text: dict[str, str] = {}
-        for cp_id, _score, emb_text in vector_hits:
+        for cip_id, _score, emb_text in vector_hits:
             if emb_text:
-                id_to_text[cp_id] = emb_text
+                id_to_text[cip_id] = emb_text
 
         # Step 4: Rerank (if enabled)
         reranker = self._get_reranker() if request.rerank else None
         if reranker and fused:
-            # Fetch embedding_text for candidates that don't have it from vector hits
             candidate_ids = [f.profile_id for f in fused[:200]]
             missing_ids = [cid for cid in candidate_ids if cid not in id_to_text]
             if missing_ids:
-                missing_profiles = await self.cp_repo.list_by_ids(missing_ids)
+                missing_profiles = await self.cip_repo.list_by_ids(missing_ids)
                 for mp in missing_profiles:
                     id_to_text[mp.id] = mp.embedding_text or ""
 
@@ -265,25 +286,24 @@ class ProfileSearchService:
         if not final_ids:
             return []
 
-        # Step 5: Batch fetch profiles + rankings (fixes N+1)
-        profiles = await self.cp_repo.list_by_ids(final_ids)
-        rankings = await self.pr_repo.list_by_cohesive_profile_ids(final_ids)
+        # Step 5: Batch fetch profiles + rankings
+        profiles = await self.cip_repo.list_by_ids(final_ids)
+        rankings = await self.pr_repo.list_by_cohesive_individual_profile_ids(final_ids)
 
-        profile_map = {cp.id: cp for cp in profiles}
-        ranking_map = {r.cohesive_profile_id: r for r in rankings}
+        profile_map = {cip.id: cip for cip in profiles}
+        ranking_map = {r.cohesive_individual_profile_id: r for r in rankings}
 
-        # Build results in score order
         results: list[SearchResultResponse] = []
-        for cp_id in final_ids:
-            cp = profile_map.get(cp_id)
-            if not cp:
+        for cip_id in final_ids:
+            cip = profile_map.get(cip_id)
+            if not cip:
                 continue
-            ranking = ranking_map.get(cp_id)
+            ranking = ranking_map.get(cip_id)
             ranking_resp = ProfileRankingResponse.model_validate(ranking) if ranking else None
             results.append(
                 SearchResultResponse(
-                    profile=CohesiveProfileResponse.model_validate(cp),
-                    score=final_scores.get(cp_id, 0.0),
+                    profile=CohesiveProfileResponse.model_validate(cip),
+                    score=final_scores.get(cip_id, 0.0),
                     ranking=ranking_resp,
                 )
             )
@@ -296,16 +316,6 @@ class ProfileSearchService:
         force: bool = False,
         progress_callback: Callable[[dict], None] | None = None,
     ) -> dict:
-        """Embed all CohesiveProfiles and upsert to Qdrant in batches.
-
-        Args:
-            batch_size: Number of profiles per batch.
-            force: Re-embed even if already embedded.
-            progress_callback: Optional callback receiving progress dict.
-
-        Returns:
-            Dict with total, embedded, skipped, errors counts.
-        """
         from qdrant_client.models import PointStruct
 
         from app.db.qdrant_client import COLLECTION_NAME
@@ -317,7 +327,7 @@ class ProfileSearchService:
         offset = 0
 
         while True:
-            profiles, total = await self.cp_repo.list_all(offset=offset, limit=batch_size)
+            profiles, total = await self.cip_repo.list_all(offset=offset, limit=batch_size)
             if stats["total"] == 0:
                 stats["total"] = total
 
@@ -325,27 +335,27 @@ class ProfileSearchService:
                 break
 
             points: list = []
-            for cp in profiles:
-                text = cp.embedding_text or ""
+            for cip in profiles:
+                text = cip.embedding_text or ""
                 if not text:
                     stats["skipped"] += 1
                     continue
 
-                if not force and cp.embedding_vector_id:
+                if not force and cip.embedding_vector_id:
                     stats["skipped"] += 1
                     continue
 
                 try:
                     vector = await provider.embed(text)
-                    point_id = cp.embedding_vector_id or str(uuid.uuid4())
-                    payload = self._build_payload(cp)
+                    point_id = cip.embedding_vector_id or str(uuid.uuid4())
+                    payload = self._build_payload(cip)
                     points.append(PointStruct(id=point_id, vector=vector, payload=payload))
 
-                    if not cp.embedding_vector_id:
-                        cp.embedding_vector_id = point_id
+                    if not cip.embedding_vector_id:
+                        cip.embedding_vector_id = point_id
                     stats["embedded"] += 1
                 except Exception:
-                    logger.exception(f"Failed to embed profile {cp.id}")
+                    logger.exception(f"Failed to embed profile {cip.id}")
                     stats["errors"] += 1
 
             if points:

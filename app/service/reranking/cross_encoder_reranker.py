@@ -1,6 +1,7 @@
+import asyncio
 import logging
 
-from app.service.reranking import Reranker, RerankCandidate, RerankResult
+from app.service.reranking import RerankCandidate, Reranker, RerankResult
 from app.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class CrossEncoderReranker(Reranker):
 
         model = _get_model()
         pairs = [[query, c.text] for c in candidates]
-        scores = model.predict(pairs)
+        scores = await asyncio.to_thread(model.predict, pairs)
 
         results = [
             RerankResult(

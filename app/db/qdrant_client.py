@@ -6,7 +6,7 @@ from app.settings import settings
 logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "developer_profiles"
-VECTOR_SIZE = 384
+VECTOR_SIZE = settings.embedding_dimension
 
 
 @lru_cache(maxsize=1)
