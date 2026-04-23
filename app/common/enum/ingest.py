@@ -8,6 +8,13 @@ class IngestJobType(str, Enum):
     HF_DISCOVER = "hf_discover"
     HF_INGEST = "hf_ingest"
     HF_RETRY = "hf_retry"
+    LN_DISCOVER = "ln_discover"
+    LN_INGEST = "ln_ingest"
+    LN_RETRY = "ln_retry"
+    PROFILE_SYNC = "profile_sync"
+    EMBED_SYNC = "embed_sync"
+    PIPELINE_DAILY = "pipeline_daily"
+    PIPELINE_WEEKLY = "pipeline_weekly"
 
 
 class IngestJobStatus(str, Enum):

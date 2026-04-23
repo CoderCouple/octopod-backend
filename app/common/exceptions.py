@@ -79,31 +79,3 @@ class DuplicateEntityError(HTTPException):
         )
 
 
-class CycleDetectedError(HTTPException):
-    """Raised when adding a reporting relationship would create a cycle.
-
-    Returns HTTP 422 Unprocessable Entity.
-
-    Args:
-        message: A descriptive error message.  Defaults to a generic
-            cycle-detection message.
-    """
-
-    def __init__(self, message: str = "Adding this relationship would create a cycle"):
-        super().__init__(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=message,
-        )
-
-
-class InsufficientVisibilityError(HTTPException):
-    """Raised when the actor lacks the required visibility level.
-
-    Returns HTTP 403 Forbidden.
-    """
-
-    def __init__(self):
-        super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient visibility level to access this resource",
-        )

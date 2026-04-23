@@ -39,10 +39,19 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Qdrant collection setup skipped (Qdrant may be unavailable)")
 
+    # Ensure OpenSearch index exists
+    if settings.opensearch_enabled:
+        try:
+            from app.db.opensearch_client import ensure_index
+
+            ensure_index()
+        except Exception:
+            logger.warning("OpenSearch index setup skipped (OpenSearch may be unavailable)")
+
     # Start email outreach workers
     try:
-        from app.outreach.send_worker import send_worker
         from app.outreach.reply_worker import reply_worker
+        from app.outreach.send_worker import send_worker
 
         await send_worker.start()
         await reply_worker.start()
@@ -53,8 +62,8 @@ async def lifespan(app: FastAPI):
 
     # Stop email outreach workers
     try:
-        from app.outreach.send_worker import send_worker
         from app.outreach.reply_worker import reply_worker
+        from app.outreach.send_worker import send_worker
 
         await send_worker.stop()
         await reply_worker.stop()

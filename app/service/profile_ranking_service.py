@@ -12,10 +12,12 @@ from app.api.v1.response.developer_profile_response import (
     SearchResultResponse,
 )
 from app.common.exceptions import EntityNotFoundError
-from app.db.repository.cohesive_profile_repository import CohesiveProfileRepository
+from app.db.repository.cohesive_individual_profile_repository import (
+    CohesiveIndividualProfileRepository,
+)
 from app.db.repository.developer_profile_repository import DeveloperProfileRepository
 from app.db.repository.profile_ranking_repository import ProfileRankingRepository
-from app.model.cohesive_profile_model import CohesiveProfile
+from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile
 from app.model.profile_ranking_model import ProfileRanking
 
 logger = logging.getLogger(__name__)
@@ -37,15 +39,15 @@ class ProfileRankingService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.dp_repo = DeveloperProfileRepository(db)
-        self.cp_repo = CohesiveProfileRepository(db)
+        self.cp_repo = CohesiveIndividualProfileRepository(db)
         self.pr_repo = ProfileRankingRepository(db)
 
     async def get_ranking(self, developer_profile_id: str) -> ProfileRankingResponse:
         cp = await self.cp_repo.get_by_developer_profile_id(developer_profile_id)
         if not cp:
-            raise EntityNotFoundError("CohesiveProfile", developer_profile_id)
+            raise EntityNotFoundError("CohesiveIndividualProfile", developer_profile_id)
 
-        ranking = await self.pr_repo.get_by_cohesive_profile_id(cp.id)
+        ranking = await self.pr_repo.get_by_cohesive_individual_profile_id(cp.id)
         if not ranking:
             ranking = await self._compute_and_store(cp)
 
@@ -65,7 +67,7 @@ class ProfileRankingService:
 
         results: list[SearchResultResponse] = []
         for cp in cohesive_profiles:
-            ranking = await self.pr_repo.get_by_cohesive_profile_id(cp.id)
+            ranking = await self.pr_repo.get_by_cohesive_individual_profile_id(cp.id)
             if not ranking:
                 ranking = await self._compute_and_store(cp, weights)
 
@@ -84,14 +86,14 @@ class ProfileRankingService:
         return results, total
 
     async def _compute_and_store(
-        self, cp: CohesiveProfile, weights: RankingWeights | None = None
+        self, cp: CohesiveIndividualProfile, weights: RankingWeights | None = None
     ) -> ProfileRanking:
         weights = weights or DEFAULT_WEIGHTS
         scores = self._compute_scores(cp)
 
-        ranking = await self.pr_repo.get_by_cohesive_profile_id(cp.id)
+        ranking = await self.pr_repo.get_by_cohesive_individual_profile_id(cp.id)
         if not ranking:
-            ranking = ProfileRanking(cohesive_profile_id=cp.id)
+            ranking = ProfileRanking(cohesive_individual_profile_id=cp.id)
 
         ranking.github_activity_score = Decimal(str(round(scores["github_activity"], 4)))
         ranking.technical_influence_score = Decimal(str(round(scores["technical_influence"], 4)))
@@ -108,7 +110,7 @@ class ProfileRankingService:
         ranking.computed_at = datetime.now(timezone.utc)
 
         if not ranking.id or ranking.id.startswith("pr_"):
-            existing = await self.pr_repo.get_by_cohesive_profile_id(cp.id)
+            existing = await self.pr_repo.get_by_cohesive_individual_profile_id(cp.id)
             if existing:
                 for attr in [
                     "github_activity_score", "technical_influence_score",
@@ -123,7 +125,7 @@ class ProfileRankingService:
 
         return ranking
 
-    def _compute_scores(self, cp: CohesiveProfile) -> dict[str, float]:
+    def _compute_scores(self, cp: CohesiveIndividualProfile) -> dict[str, float]:
         return {
             "github_activity": self._github_activity_score(cp),
             "technical_influence": self._technical_influence_score(cp),
@@ -136,7 +138,7 @@ class ProfileRankingService:
         }
 
     @staticmethod
-    def _github_activity_score(cp: CohesiveProfile) -> float:
+    def _github_activity_score(cp: CohesiveIndividualProfile) -> float:
         contributions = cp.total_contributions or 0
         repos = cp.total_repos or 0
         return _clamp(
@@ -144,7 +146,7 @@ class ProfileRankingService:
         )
 
     @staticmethod
-    def _technical_influence_score(cp: CohesiveProfile) -> float:
+    def _technical_influence_score(cp: CohesiveIndividualProfile) -> float:
         stars = cp.total_stars or 0
         followers = cp.total_followers or 0
         downloads = cp.total_hf_downloads or 0
@@ -157,7 +159,7 @@ class ProfileRankingService:
         )
 
     @staticmethod
-    def _hiring_fit_score(cp: CohesiveProfile) -> float:
+    def _hiring_fit_score(cp: CohesiveIndividualProfile) -> float:
         skills_count = len(cp.skills or [])
         has_title = 1.0 if cp.current_title else 0.0
         has_company = 1.0 if cp.current_company else 0.0
@@ -168,12 +170,12 @@ class ProfileRankingService:
         )
 
     @staticmethod
-    def _experience_score(cp: CohesiveProfile) -> float:
+    def _experience_score(cp: CohesiveIndividualProfile) -> float:
         years = cp.years_of_experience or 0
         return _clamp(min(years, 15) / 15.0)
 
     @staticmethod
-    def _skills_breadth_score(cp: CohesiveProfile) -> float:
+    def _skills_breadth_score(cp: CohesiveIndividualProfile) -> float:
         skills = len(cp.skills or [])
         langs = len(cp.languages or [])
         return _clamp(
@@ -181,7 +183,7 @@ class ProfileRankingService:
         )
 
     @staticmethod
-    def _recency_score(cp: CohesiveProfile) -> float:
+    def _recency_score(cp: CohesiveIndividualProfile) -> float:
         if not cp.merged_at:
             return 0.5
         merged = cp.merged_at
@@ -203,7 +205,7 @@ class ProfileRankingService:
         return 0.1
 
     @staticmethod
-    def _oss_contribution_score(cp: CohesiveProfile) -> float:
+    def _oss_contribution_score(cp: CohesiveIndividualProfile) -> float:
         contributions = cp.total_contributions or 0
         repos = cp.total_repos or 0
         topics = len(cp.topics or [])
@@ -214,7 +216,7 @@ class ProfileRankingService:
         )
 
     @staticmethod
-    def _hf_impact_score(cp: CohesiveProfile) -> float:
+    def _hf_impact_score(cp: CohesiveIndividualProfile) -> float:
         models = cp.total_hf_models or 0
         datasets = cp.total_hf_datasets or 0
         downloads = cp.total_hf_downloads or 0

@@ -4,7 +4,7 @@ import pytest
 import pytest_asyncio
 
 from app.api.v1.request.developer_profile_request import RankingWeights
-from app.model.cohesive_profile_model import CohesiveProfile
+from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile
 from app.model.developer_profile_model import DeveloperProfile
 from app.service.profile_ranking_service import (
     ProfileRankingService,
@@ -44,7 +44,7 @@ async def ranking_setup(async_session):
     async_session.add(dp)
     await async_session.flush()
 
-    cp = CohesiveProfile(
+    cp = CohesiveIndividualProfile(
         developer_profile_id=dp.id,
         display_name="Ranker User",
         total_repos=50,
@@ -77,7 +77,7 @@ async def test_compute_ranking(async_session, ranking_setup):
     service = ProfileRankingService(async_session)
     result = await service.get_ranking(dp.id)
 
-    assert result.cohesive_profile_id == cp.id
+    assert result.cohesive_individual_profile_id == cp.id
     assert 0.0 <= float(result.github_activity_score) <= 1.0
     assert 0.0 <= float(result.technical_influence_score) <= 1.0
     assert 0.0 <= float(result.experience_score) <= 1.0
@@ -107,7 +107,7 @@ async def test_ranking_zero_profile(async_session):
     async_session.add(dp)
     await async_session.flush()
 
-    cp = CohesiveProfile(
+    cp = CohesiveIndividualProfile(
         developer_profile_id=dp.id,
         display_name="Zero User",
         merged_at=datetime.now(timezone.utc),

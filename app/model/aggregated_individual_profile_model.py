@@ -1,26 +1,22 @@
 import uuid
 
-from sqlalchemy import JSON, TIMESTAMP, Boolean, Column, Integer, String, Text, func
+from sqlalchemy import JSON, TIMESTAMP, Column, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.db.base import Base
 
 
 def generate_prefixed_uuid():
-    return f"dp_{uuid.uuid4()}"
+    return f"aip_{uuid.uuid4()}"
 
 
-class DeveloperProfile(Base):
-    __tablename__ = "developer_profile"
+class AggregatedIndividualProfile(Base):
+    __tablename__ = "aggregated_individual_profile"
 
     id = Column(String(), primary_key=True, default=generate_prefixed_uuid, nullable=False)
-    github_username = Column(String(255), nullable=True, unique=True)
-    huggingface_username = Column(String(255), nullable=True, unique=True)
-    email_hint = Column(String(320), nullable=True)
-    ingestion_status = Column(String(30), nullable=False, default="pending")
-    last_ingested_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    developer_profile_id = Column(String(), nullable=False, unique=True)
 
-    # Merged GH+HF data (Layer 2: domain merge)
+    # From developer_profile (GH+HF)
     display_name = Column(String(255), nullable=True)
     bio = Column(Text(), nullable=True)
     avatar_url = Column(String(2048), nullable=True)
@@ -45,14 +41,28 @@ class DeveloperProfile(Base):
     topics = Column(
         JSON().with_variant(JSONB, "postgresql"), nullable=True, default=list
     )
-    dev_source_priority = Column(
+
+    # From social_profile (LN+X)
+    headline = Column(Text(), nullable=True)
+    current_title = Column(String(255), nullable=True)
+    current_company = Column(String(255), nullable=True)
+    industry = Column(String(255), nullable=True)
+    years_of_experience = Column(Integer, nullable=True)
+    job_history = Column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True, default=list
+    )
+    education = Column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True, default=list
+    )
+    certifications = Column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True, default=list
+    )
+    connections = Column(Integer, nullable=True)
+
+    # Merge metadata
+    source_priority = Column(
         JSON().with_variant(JSONB, "postgresql"), nullable=True, default=dict
     )
-    dev_merged_at = Column(TIMESTAMP(timezone=True), nullable=True)
-
-    # Audit
-    is_deleted = Column(Boolean, default=False, nullable=False)
-    created_by = Column(String(), nullable=True)
-    updated_by = Column(String(), nullable=True)
+    aggregated_at = Column(TIMESTAMP(timezone=True), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), default=func.now(), nullable=False)
     updated_at = Column(TIMESTAMP(timezone=True), default=func.now(), nullable=False)

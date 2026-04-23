@@ -8,33 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
+from app.model.aggregated_individual_profile_model import AggregatedIndividualProfile  # noqa: F401
+from app.model.campaign_recipient_model import CampaignRecipient  # noqa: F401
+from app.model.campaign_step_model import CampaignStep  # noqa: F401
+from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile  # noqa: F401
 
 # Import all models so Base.metadata knows about them
-from app.model.career_event_model import CareerEvent  # noqa: F401
-from app.model.claim_evidence_model import ClaimEvidence  # noqa: F401
-
 # Developer profile models
-from app.model.cohesive_profile_model import CohesiveProfile  # noqa: F401
-from app.model.contributor_score_model import ContributorScore  # noqa: F401
 from app.model.developer_profile_model import DeveloperProfile  # noqa: F401
-from app.model.employee_model import Employee  # noqa: F401
-from app.model.employment_model import Employment  # noqa: F401
-from app.model.event_log_model import EventLog  # noqa: F401
-from app.model.organization_model import Organization  # noqa: F401
-from app.model.platform_profile_model import PlatformProfile  # noqa: F401
-from app.model.profile_ranking_model import ProfileRanking  # noqa: F401
-from app.model.reporting_claim_model import ReportingClaim  # noqa: F401
-from app.model.reporting_relationship_model import ReportingRelationship  # noqa: F401
+from app.model.email_campaign_model import EmailCampaign  # noqa: F401
+from app.model.email_event_model import EmailEvent  # noqa: F401
+from app.model.email_message_model import EmailMessage  # noqa: F401
+from app.model.email_template_model import EmailTemplate  # noqa: F401
+from app.model.email_unsubscribe_model import EmailUnsubscribe  # noqa: F401
 
 # Email outreach models
 from app.model.mailbox_model import Mailbox  # noqa: F401
-from app.model.email_template_model import EmailTemplate  # noqa: F401
-from app.model.email_campaign_model import EmailCampaign  # noqa: F401
-from app.model.campaign_step_model import CampaignStep  # noqa: F401
-from app.model.campaign_recipient_model import CampaignRecipient  # noqa: F401
-from app.model.email_message_model import EmailMessage  # noqa: F401
-from app.model.email_event_model import EmailEvent  # noqa: F401
-from app.model.email_unsubscribe_model import EmailUnsubscribe  # noqa: F401
+from app.model.merge_audit_log_model import MergeAuditLog  # noqa: F401
+from app.model.profile_ranking_model import ProfileRanking  # noqa: F401
+from app.model.social_profile_model import SocialProfile  # noqa: F401
 
 ASYNC_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

@@ -12,7 +12,6 @@ from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.developer_profile_response import (
     CohesiveProfileResponse,
     DeveloperProfileResponse,
-    IngestionStatusResponse,
     ProfileRankingResponse,
     SearchResultResponse,
 )
@@ -20,7 +19,6 @@ from app.common.auth.auth import get_actor_id
 from app.common.pagination import PaginatedResponse
 from app.db.session import get_db
 from app.service.developer_profile_service import DeveloperProfileService
-from app.service.platform_ingestion_service import PlatformIngestionService
 from app.service.profile_merge_service import ProfileMergeService
 from app.service.profile_ranking_service import ProfileRankingService
 from app.service.profile_search_service import ProfileSearchService
@@ -30,10 +28,6 @@ router = APIRouter(tags=[Tags.DeveloperProfile])
 
 def get_profile_service(db: AsyncSession = Depends(get_db)) -> DeveloperProfileService:
     return DeveloperProfileService(db)
-
-
-def get_ingestion_service(db: AsyncSession = Depends(get_db)) -> PlatformIngestionService:
-    return PlatformIngestionService(db)
 
 
 def get_merge_service(db: AsyncSession = Depends(get_db)) -> ProfileMergeService:
@@ -57,11 +51,8 @@ async def create_developer_profile(
     body: CreateDeveloperProfileRequest,
     actor_id: str | None = Depends(get_actor_id),
     service: DeveloperProfileService = Depends(get_profile_service),
-    ingestion_service: PlatformIngestionService = Depends(get_ingestion_service),
 ):
     profile = await service.create_profile(body, actor_id)
-    if body.auto_ingest:
-        await ingestion_service.ingest_all(profile.id)
     return success_response(profile, "Developer profile created", 201)
 
 
@@ -103,33 +94,6 @@ async def update_developer_profile(
 ):
     profile = await service.update_profile(profile_id, body, actor_id)
     return success_response(profile, "Developer profile updated")
-
-
-@router.post(
-    "/developer-profile/{profile_id}/ingest",
-    response_model=BaseResponse[IngestionStatusResponse],
-    status_code=202,
-)
-async def trigger_ingestion(
-    profile_id: str,
-    service: DeveloperProfileService = Depends(get_profile_service),
-    ingestion_service: PlatformIngestionService = Depends(get_ingestion_service),
-):
-    await service.get_profile(profile_id)
-    status = await ingestion_service.ingest_all(profile_id)
-    return success_response(status, "Ingestion triggered", 202)
-
-
-@router.get(
-    "/developer-profile/{profile_id}/status",
-    response_model=BaseResponse[IngestionStatusResponse],
-)
-async def get_ingestion_status(
-    profile_id: str,
-    ingestion_service: PlatformIngestionService = Depends(get_ingestion_service),
-):
-    status = await ingestion_service.get_status(profile_id)
-    return success_response(status, "Ingestion status fetched")
 
 
 @router.get(
@@ -204,7 +168,7 @@ async def embed_all_profiles(
     force: bool = Query(default=False),
     search_service: ProfileSearchService = Depends(get_search_service),
 ):
-    """Trigger batch embedding of all cohesive profiles. Runs as background task."""
+    """Trigger batch embedding of all cohesive profiles."""
 
     async def _run_embed():
         try:

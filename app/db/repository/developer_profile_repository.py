@@ -29,18 +29,6 @@ class DeveloperProfileRepository:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
-    async def get_by_linkedin_url(
-        self, url: str, exclude_id: str | None = None
-    ) -> DeveloperProfile | None:
-        query = select(DeveloperProfile).where(
-            DeveloperProfile.linkedin_url == url,
-            DeveloperProfile.is_deleted == False,  # noqa: E712
-        )
-        if exclude_id:
-            query = query.where(DeveloperProfile.id != exclude_id)
-        result = await self.db.execute(query)
-        return result.scalar_one_or_none()
-
     async def get_by_huggingface_username(
         self, username: str, exclude_id: str | None = None
     ) -> DeveloperProfile | None:

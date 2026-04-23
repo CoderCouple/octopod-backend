@@ -3,24 +3,20 @@ from pydantic import BaseModel, Field, model_validator
 
 class CreateDeveloperProfileRequest(BaseModel):
     github_username: str | None = Field(default=None, max_length=255)
-    linkedin_url: str | None = Field(default=None, max_length=2048)
     huggingface_username: str | None = Field(default=None, max_length=255)
-    employee_id: str | None = Field(default=None)
     email_hint: str | None = Field(default=None, max_length=320)
     auto_ingest: bool = True
 
     @model_validator(mode="after")
     def at_least_one_identifier(self) -> "CreateDeveloperProfileRequest":
-        if not any([self.github_username, self.linkedin_url, self.huggingface_username]):
+        if not any([self.github_username, self.huggingface_username]):
             raise ValueError("At least one platform identifier is required")
         return self
 
 
 class UpdateDeveloperProfileRequest(BaseModel):
     github_username: str | None = Field(default=None, max_length=255)
-    linkedin_url: str | None = Field(default=None, max_length=2048)
     huggingface_username: str | None = Field(default=None, max_length=255)
-    employee_id: str | None = Field(default=None)
     email_hint: str | None = Field(default=None, max_length=320)
 
 

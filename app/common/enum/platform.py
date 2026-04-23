@@ -5,6 +5,7 @@ class Platform(str, Enum):
     GITHUB = "github"
     LINKEDIN = "linkedin"
     HUGGINGFACE = "huggingface"
+    X_TWITTER = "x_twitter"
 
 
 class IngestionStatus(str, Enum):

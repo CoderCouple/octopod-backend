@@ -15,7 +15,7 @@ def _parse_tokens(raw: str) -> list[str]:
 @dataclass
 class HFConfig:
     hf_tokens: list[str] = field(
-        default_factory=lambda: _parse_tokens(settings.hf_tokens)
+        default_factory=lambda: _parse_tokens(settings.huggingface_tokens)
     )
     endpoint: str = field(default_factory=lambda: settings.hf_endpoint)
     db_dsn: str = field(default_factory=lambda: settings.asyncpg_dsn)

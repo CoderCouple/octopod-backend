@@ -87,13 +87,18 @@ async def test_update_developer_profile(async_client):
 
 
 @pytest.mark.asyncio
-async def test_create_with_linkedin(async_client):
+async def test_create_with_github_and_huggingface(async_client):
     resp = await async_client.post(
         "/api/v1/developer-profile",
-        json={"linkedin_url": "https://linkedin.com/in/test", "auto_ingest": False},
+        json={
+            "github_username": "combo_user",
+            "huggingface_username": "combo_hf",
+            "auto_ingest": False,
+        },
     )
     assert resp.status_code == 201
-    assert resp.json()["result"]["linkedin_url"] == "https://linkedin.com/in/test"
+    assert resp.json()["result"]["github_username"] == "combo_user"
+    assert resp.json()["result"]["huggingface_username"] == "combo_hf"
 
 
 @pytest.mark.asyncio

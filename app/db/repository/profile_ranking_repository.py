@@ -14,24 +14,24 @@ class ProfileRankingRepository:
         )
         return result.scalar_one_or_none()
 
-    async def get_by_cohesive_profile_id(
-        self, cohesive_profile_id: str
+    async def get_by_cohesive_individual_profile_id(
+        self, cohesive_individual_profile_id: str
     ) -> ProfileRanking | None:
         result = await self.db.execute(
             select(ProfileRanking).where(
-                ProfileRanking.cohesive_profile_id == cohesive_profile_id,
+                ProfileRanking.cohesive_individual_profile_id == cohesive_individual_profile_id,
             )
         )
         return result.scalar_one_or_none()
 
-    async def list_by_cohesive_profile_ids(
-        self, cohesive_profile_ids: list[str]
+    async def list_by_cohesive_individual_profile_ids(
+        self, cohesive_individual_profile_ids: list[str]
     ) -> list[ProfileRanking]:
-        if not cohesive_profile_ids:
+        if not cohesive_individual_profile_ids:
             return []
         result = await self.db.execute(
             select(ProfileRanking).where(
-                ProfileRanking.cohesive_profile_id.in_(cohesive_profile_ids)
+                ProfileRanking.cohesive_individual_profile_id.in_(cohesive_individual_profile_ids)
             )
         )
         return list(result.scalars().all())

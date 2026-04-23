@@ -14,7 +14,7 @@ class ProfileRanking(Base):
     __tablename__ = "profile_ranking"
 
     id = Column(String(), primary_key=True, default=generate_prefixed_uuid, nullable=False)
-    cohesive_profile_id = Column(String(), nullable=False, unique=True)
+    cohesive_individual_profile_id = Column(String(), nullable=False, unique=True)
 
     github_activity_score = Column(Numeric(5, 4), nullable=True, default=0)
     technical_influence_score = Column(Numeric(5, 4), nullable=True, default=0)

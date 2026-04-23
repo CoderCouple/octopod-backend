@@ -132,6 +132,14 @@ class HFOrchestrator:
                 await self.tracker.item_failed(username, "transient", str(e))
             return
 
+        # Skip organizations — we only want individual profiles
+        if user.get("_type") == "org":
+            log.debug("Skipping %s (organization, not individual)", username)
+            self.stats.skipped += 1
+            if self.tracker:
+                await self.tracker.item_skipped(username)
+            return
+
         await self.storage.upsert_user(username, user)
 
         # Models & datasets in parallel

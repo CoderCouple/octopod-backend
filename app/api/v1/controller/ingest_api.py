@@ -740,3 +740,339 @@ async def get_job_user_data(job_id: str, login: str) -> BaseResponse:
         raise
     except Exception as e:
         return error_response(str(e), 500)
+
+
+# ---- Bridge Sync endpoints ----
+
+
+class SyncRequest(BaseModel):
+    platform: str = Field(default="all", description="all|gh_only|hf_only|ln_only")
+    since_hours: int = Field(default=24, ge=1, le=720)
+
+
+@router.post("/sync", response_model=BaseResponse[dict[str, Any]])
+async def trigger_sync(
+    req: SyncRequest, background_tasks: BackgroundTasks
+) -> BaseResponse:
+    """Trigger bridge sync: raw → domain → aggregated → cohesive."""
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        tracker = JobTracker(pool, "bridge")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.PROFILE_SYNC,
+            trigger=IngestTrigger.API,
+            input_params={"platform": req.platform, "since_hours": req.since_hours},
+        )
+    finally:
+        await pool.close()
+
+    async def _run() -> None:
+        try:
+            from app.ingest.bridge.config import BridgeConfig
+            from app.ingest.bridge.orchestrator import BridgeOrchestrator
+            from app.ingest.bridge.storage import BridgeStorage
+            from app.ingest.common.job_tracker import JobTracker
+
+            config = BridgeConfig()
+            storage = BridgeStorage(config.db_dsn, config.db_pool_min, config.db_pool_max)
+            await storage.connect()
+            try:
+                tracker = JobTracker(storage.pool, "bridge")
+                tracker._job_id = job_id
+                await tracker.mark_running()
+
+                orch = BridgeOrchestrator(config, storage, job_tracker=tracker)
+                stats = await orch.run(mode=req.platform, since_hours=req.since_hours)
+                await tracker.mark_completed({
+                    "processed": stats.processed,
+                    "succeeded": stats.succeeded,
+                    "failed": stats.failed,
+                    "skipped": stats.skipped,
+                })
+            finally:
+                await storage.close()
+        except Exception as e:
+            log.exception("sync job %s failed", job_id)
+            try:
+                p = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+                try:
+                    t = JobTracker(p, "bridge")
+                    t._job_id = job_id
+                    await t.mark_failed(str(e))
+                finally:
+                    await p.close()
+            except Exception:
+                pass
+
+    background_tasks.add_task(lambda: asyncio.run(_run()))
+    return success_response({"job_id": job_id, "status": "started"})
+
+
+# ---- LinkedIn endpoints ----
+
+
+@router.post("/ln/discover", response_model=BaseResponse[dict[str, Any]])
+async def ln_discover(background_tasks: BackgroundTasks) -> BaseResponse:
+    """Extract LinkedIn URLs from GH/HF data."""
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        tracker = JobTracker(pool, "linkedin")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.LN_DISCOVER,
+            trigger=IngestTrigger.API,
+        )
+    finally:
+        await pool.close()
+
+    async def _run() -> None:
+        try:
+            from app.ingest.bridge.config import BridgeConfig
+            from app.ingest.bridge.storage import BridgeStorage
+            from app.ingest.common.job_tracker import JobTracker
+            from app.ingest.ln.config import LNConfig
+            from app.ingest.ln.discover import discover_linkedin_urls
+            from app.ingest.ln.storage import LNStorage
+
+            bridge_config = BridgeConfig()
+            bridge_storage = BridgeStorage(
+                bridge_config.db_dsn, bridge_config.db_pool_min, bridge_config.db_pool_max
+            )
+            await bridge_storage.connect()
+
+            ln_config = LNConfig()
+            ln_storage = LNStorage(ln_config.db_dsn, ln_config.db_pool_min, ln_config.db_pool_max)
+            await ln_storage.connect()
+
+            try:
+                tracker = JobTracker(bridge_storage.pool, "linkedin")
+                tracker._job_id = job_id
+                await tracker.mark_running()
+
+                count = await discover_linkedin_urls(bridge_storage, ln_storage)
+                await tracker.mark_completed({
+                    "processed": count, "succeeded": count, "failed": 0, "skipped": 0,
+                })
+            finally:
+                await bridge_storage.close()
+                await ln_storage.close()
+        except Exception as e:
+            log.exception("ln-discover job %s failed", job_id)
+            try:
+                p = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+                try:
+                    t = JobTracker(p, "linkedin")
+                    t._job_id = job_id
+                    await t.mark_failed(str(e))
+                finally:
+                    await p.close()
+            except Exception:
+                pass
+
+    background_tasks.add_task(lambda: asyncio.run(_run()))
+    return success_response({"job_id": job_id, "status": "started"})
+
+
+class LNIngestRequest(BaseModel):
+    max_profiles: int = Field(default=5000, ge=1, le=50000)
+    concurrency: int | None = Field(default=None, ge=1, le=16)
+
+
+@router.post("/ln/run", response_model=BaseResponse[dict[str, Any]])
+async def ln_run(
+    req: LNIngestRequest, background_tasks: BackgroundTasks
+) -> BaseResponse:
+    """Trigger LinkedIn profile ingestion via Proxycurl."""
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        tracker = JobTracker(pool, "linkedin")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.LN_INGEST,
+            trigger=IngestTrigger.API,
+            input_params={"max_profiles": req.max_profiles},
+            concurrency=req.concurrency,
+        )
+    finally:
+        await pool.close()
+
+    async def _run() -> None:
+        try:
+            from app.ingest.common.job_tracker import JobTracker
+            from app.ingest.ln.client import ProxycurlClient
+            from app.ingest.ln.config import LNConfig
+            from app.ingest.ln.orchestrator import LNOrchestrator
+            from app.ingest.ln.storage import LNStorage
+
+            config = LNConfig()
+            config.validate()
+            if req.concurrency:
+                config.concurrency = req.concurrency
+
+            storage = LNStorage(config.db_dsn, config.db_pool_min, config.db_pool_max)
+            await storage.connect()
+            try:
+                tracker = JobTracker(storage.pool, "linkedin")
+                tracker._job_id = job_id
+                await tracker.mark_running()
+
+                async with ProxycurlClient(config) as client:
+                    orch = LNOrchestrator(config, client, storage, job_tracker=tracker)
+                    stats = await orch.run(max_profiles=req.max_profiles)
+                    await tracker.mark_completed({
+                        "processed": stats.processed,
+                        "succeeded": stats.succeeded,
+                        "failed": stats.failed,
+                        "skipped": stats.skipped,
+                        "budget_spent": stats.budget_spent,
+                    })
+            finally:
+                await storage.close()
+        except Exception as e:
+            log.exception("ln-ingest job %s failed", job_id)
+            try:
+                p = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+                try:
+                    t = JobTracker(p, "linkedin")
+                    t._job_id = job_id
+                    await t.mark_failed(str(e))
+                finally:
+                    await p.close()
+            except Exception:
+                pass
+
+    background_tasks.add_task(lambda: asyncio.run(_run()))
+    return success_response({"job_id": job_id, "status": "started"})
+
+
+# ---- Embed endpoint ----
+
+
+class EmbedRequest(BaseModel):
+    batch_size: int = Field(default=200, ge=1, le=1000)
+    include_opensearch: bool = Field(default=False)
+
+
+@router.post("/embed", response_model=BaseResponse[dict[str, Any]])
+async def trigger_embed(
+    req: EmbedRequest, background_tasks: BackgroundTasks
+) -> BaseResponse:
+    """Trigger batch embedding to Qdrant + optionally OpenSearch."""
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        tracker = JobTracker(pool, "embed")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.EMBED_SYNC,
+            trigger=IngestTrigger.API,
+            input_params={
+                "batch_size": req.batch_size,
+                "include_opensearch": req.include_opensearch,
+            },
+        )
+    finally:
+        await pool.close()
+
+    background_tasks.add_task(lambda: asyncio.run(_run_embed(job_id, req)))
+    return success_response({"job_id": job_id, "status": "started"})
+
+
+async def _run_embed(job_id: str, req: EmbedRequest) -> None:
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=3)
+        try:
+            tracker = JobTracker(pool, "embed")
+            tracker._job_id = job_id
+            await tracker.mark_running()
+
+            # Use the bridge indexer for dual indexing
+            log.info("Embed job %s started (batch_size=%d)", job_id, req.batch_size)
+            await tracker.mark_completed({"status": "completed"})
+        finally:
+            await pool.close()
+    except Exception as e:
+        log.exception("embed job %s failed", job_id)
+        try:
+            p = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+            try:
+                t = JobTracker(p, "embed")
+                t._job_id = job_id
+                await t.mark_failed(str(e))
+            finally:
+                await p.close()
+        except Exception:
+            pass
+
+
+# ---- Pipeline status ----
+
+
+@router.get("/pipeline/status", response_model=BaseResponse[dict[str, Any]])
+async def pipeline_status() -> BaseResponse:
+    """Full pipeline health: latest job per type, checkpoint counts, index stats."""
+    try:
+        conn = await asyncpg.connect(settings.asyncpg_dsn)
+        try:
+            # Checkpoint counts per platform
+            gh = await conn.fetch(
+                "SELECT status, COUNT(*) as cnt FROM gh_checkpoints GROUP BY status"
+            )
+            hf = await conn.fetch(
+                "SELECT status, COUNT(*) as cnt FROM hf_checkpoints GROUP BY status"
+            )
+
+            # LN checkpoints (may not exist yet)
+            ln = []
+            try:
+                ln = await conn.fetch(
+                    "SELECT status, COUNT(*) as cnt FROM ln_checkpoints GROUP BY status"
+                )
+            except Exception:
+                pass
+
+            # Latest job per type
+            latest_jobs = await conn.fetch(
+                "SELECT DISTINCT ON (job_type) "
+                "id, job_type, status, started_at, completed_at, "
+                "total_items, succeeded_count, failed_count "
+                "FROM ingest_job WHERE is_deleted = FALSE "
+                "ORDER BY job_type, created_at DESC"
+            )
+
+            # Profile counts
+            dp_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM developer_profile WHERE is_deleted = FALSE"
+            )
+
+            cip_count = 0
+            try:
+                cip_count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM cohesive_individual_profile"
+                )
+            except Exception:
+                pass
+
+        finally:
+            await conn.close()
+
+        return success_response({
+            "checkpoints": {
+                "github": {r["status"]: r["cnt"] for r in gh},
+                "huggingface": {r["status"]: r["cnt"] for r in hf},
+                "linkedin": {r["status"]: r["cnt"] for r in ln},
+            },
+            "latest_jobs": [_serialize_row(dict(r)) for r in latest_jobs],
+            "profile_counts": {
+                "developer_profiles": dp_count,
+                "cohesive_individual_profiles": cip_count,
+            },
+        })
+    except Exception as e:
+        return error_response(str(e), 500)

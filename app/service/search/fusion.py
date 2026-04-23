@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -12,15 +12,13 @@ class FusedResult:
 
 
 def reciprocal_rank_fusion(
-    vector_results: list[tuple[str, float]],
-    keyword_results: list[tuple[str, float]],
+    *ranked_lists: list[tuple[str, float]],
     k: int = 60,
 ) -> list[FusedResult]:
-    """Merge vector and keyword search results using Reciprocal Rank Fusion.
+    """Merge N ranked lists using Reciprocal Rank Fusion.
 
     Args:
-        vector_results: List of (profile_id, score) from vector search.
-        keyword_results: List of (profile_id, score) from keyword search.
+        *ranked_lists: Variable number of (profile_id, score) lists.
         k: RRF constant (default 60).
 
     Returns:
@@ -28,19 +26,19 @@ def reciprocal_rank_fusion(
     """
     merged: dict[str, FusedResult] = {}
 
-    for rank, (pid, score) in enumerate(vector_results, start=1):
-        if pid not in merged:
-            merged[pid] = FusedResult(profile_id=pid)
-        merged[pid].rrf_score += 1.0 / (k + rank)
-        merged[pid].vector_score = score
-        merged[pid].vector_rank = rank
+    for list_idx, ranked_list in enumerate(ranked_lists):
+        for rank, (pid, score) in enumerate(ranked_list, start=1):
+            if pid not in merged:
+                merged[pid] = FusedResult(profile_id=pid)
+            merged[pid].rrf_score += 1.0 / (k + rank)
 
-    for rank, (pid, score) in enumerate(keyword_results, start=1):
-        if pid not in merged:
-            merged[pid] = FusedResult(profile_id=pid)
-        merged[pid].rrf_score += 1.0 / (k + rank)
-        merged[pid].keyword_score = score
-        merged[pid].keyword_rank = rank
+            # Store scores for the first two lists (vector + keyword) for backwards compat
+            if list_idx == 0:
+                merged[pid].vector_score = score
+                merged[pid].vector_rank = rank
+            elif list_idx == 1:
+                merged[pid].keyword_score = score
+                merged[pid].keyword_rank = rank
 
     results = sorted(merged.values(), key=lambda r: r.rrf_score, reverse=True)
     return results

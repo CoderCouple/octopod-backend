@@ -6,11 +6,11 @@ import pytest
 import pytest_asyncio
 
 from app.api.v1.request.developer_profile_request import SemanticSearchRequest
-from app.model.cohesive_profile_model import CohesiveProfile
+from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile
 from app.model.developer_profile_model import DeveloperProfile
 from app.service.embedding import EmbeddingProvider
 from app.service.profile_search_service import ProfileSearchService
-from app.service.reranking import Reranker, RerankCandidate, RerankResult
+from app.service.reranking import RerankCandidate, Reranker, RerankResult
 
 
 class MockEmbeddingProvider(EmbeddingProvider):
@@ -133,7 +133,7 @@ async def search_setup(async_session):
         async_session.add(dp)
         await async_session.flush()
 
-        cp = CohesiveProfile(
+        cp = CohesiveIndividualProfile(
             developer_profile_id=dp.id,
             display_name=name,
             embedding_text=text,
