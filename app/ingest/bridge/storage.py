@@ -677,6 +677,95 @@ class BridgeStorage:
                 rows,
             )
 
+    # ---------- Identity resolution: merge two profiles ----------
+
+    async def merge_profiles(self, source_dp_id: str, target_dp_id: str) -> None:
+        """Merge source developer_profile into target in a single transaction.
+
+        1. Copy non-null platform links from source → target
+        2. Handle UNIQUE FK tables (social_profile, aggregated, cohesive):
+           if target has row → delete source's; else re-point to target
+        3. Re-point non-unique FKs (campaign_recipient, merge_audit_log)
+        4. Soft-delete source: is_deleted=TRUE, merged_into_id=target
+        5. Update merge_candidate status
+        6. Mark target ingestion_status='pending' to trigger rebuild
+        """
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # 1. Copy platform links
+                await conn.execute(
+                    "UPDATE developer_profile SET "
+                    "github_username = COALESCE(github_username, "
+                    "  (SELECT github_username FROM developer_profile WHERE id = $2)), "
+                    "huggingface_username = COALESCE(huggingface_username, "
+                    "  (SELECT huggingface_username FROM developer_profile WHERE id = $2)), "
+                    "email_hint = COALESCE(email_hint, "
+                    "  (SELECT email_hint FROM developer_profile WHERE id = $2)), "
+                    "updated_at = NOW() "
+                    "WHERE id = $1",
+                    target_dp_id, source_dp_id,
+                )
+
+                # 2. Handle UNIQUE FK tables
+                for table in ("social_profile", "aggregated_individual_profile",
+                              "cohesive_individual_profile"):
+                    target_has = await conn.fetchval(
+                        f"SELECT 1 FROM {table} WHERE developer_profile_id = $1",
+                        target_dp_id,
+                    )
+                    if target_has:
+                        await conn.execute(
+                            f"DELETE FROM {table} WHERE developer_profile_id = $1",
+                            source_dp_id,
+                        )
+                    else:
+                        await conn.execute(
+                            f"UPDATE {table} SET developer_profile_id = $1, "
+                            "updated_at = NOW() "
+                            f"WHERE developer_profile_id = $2",
+                            target_dp_id, source_dp_id,
+                        )
+
+                # 3. Re-point non-unique FKs
+                await conn.execute(
+                    "UPDATE campaign_recipient SET developer_profile_id = $1, "
+                    "updated_at = NOW() WHERE developer_profile_id = $2",
+                    target_dp_id, source_dp_id,
+                )
+                await conn.execute(
+                    "UPDATE merge_audit_log SET developer_profile_id = $1 "
+                    "WHERE developer_profile_id = $2",
+                    target_dp_id, source_dp_id,
+                )
+
+                # 4. Soft-delete source
+                await conn.execute(
+                    "UPDATE developer_profile SET "
+                    "is_deleted = TRUE, merged_into_id = $2, "
+                    "ingestion_status = 'merged', updated_at = NOW() "
+                    "WHERE id = $1",
+                    source_dp_id, target_dp_id,
+                )
+
+                # 5. Update merge_candidate
+                await conn.execute(
+                    "UPDATE merge_candidate SET "
+                    "status = 'merged', resolved_profile_id = $3, "
+                    "merged_at = NOW(), updated_at = NOW() "
+                    "WHERE source_profile_id = $1 AND target_profile_id = $2",
+                    source_dp_id, target_dp_id, target_dp_id,
+                )
+
+                # 6. Mark target for rebuild
+                await conn.execute(
+                    "UPDATE developer_profile SET "
+                    "ingestion_status = 'pending', updated_at = NOW() "
+                    "WHERE id = $1",
+                    target_dp_id,
+                )
+
+        log.info("[merge] Merged %s → %s", source_dp_id, target_dp_id)
+
     # ---------- LinkedIn URL extraction ----------
 
     async def extract_linkedin_urls(self) -> list[dict[str, Any]]:

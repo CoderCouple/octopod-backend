@@ -43,12 +43,14 @@ class JobTracker:
         triggered_by: str | None = None,
         input_params: dict[str, Any] | None = None,
         concurrency: int | None = None,
+        execution_phase_id: str | None = None,
     ) -> str:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO ingest_job (job_type, platform, trigger, triggered_by, input_params, concurrency)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO ingest_job (job_type, platform, trigger, triggered_by,
+                                        input_params, concurrency, execution_phase_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
                 """,
                 job_type,
@@ -57,6 +59,7 @@ class JobTracker:
                 triggered_by,
                 json.dumps(input_params or {}),
                 concurrency,
+                execution_phase_id,
             )
         self._job_id = row["id"]
         return self._job_id

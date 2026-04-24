@@ -39,6 +39,26 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Qdrant collection setup skipped (Qdrant may be unavailable)")
 
+    # Recover stale pipeline executions (mark running → paused)
+    try:
+        import asyncpg
+
+        from app.ingest.pipeline.tracker import PipelineTracker
+
+        pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+        try:
+            count = await PipelineTracker.mark_stale_running_as_paused(pool)
+            if count:
+                logger.warning(
+                    "Recovered %d stale pipeline execution(s) — marked as paused. "
+                    "Resume via POST /api/v1/ingest/pipeline/{id}/resume",
+                    count,
+                )
+        finally:
+            await pool.close()
+    except Exception:
+        logger.warning("Pipeline recovery check skipped (DB may be unavailable)")
+
     # Ensure OpenSearch index exists
     if settings.opensearch_enabled:
         try:
@@ -58,7 +78,23 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("Email outreach workers startup skipped")
 
+    # Start pipeline scheduler
+    try:
+        from app.ingest.pipeline.scheduler import pipeline_scheduler
+
+        await pipeline_scheduler.start()
+    except Exception:
+        logger.warning("Pipeline scheduler startup skipped")
+
     yield
+
+    # Stop pipeline scheduler
+    try:
+        from app.ingest.pipeline.scheduler import pipeline_scheduler
+
+        await pipeline_scheduler.stop()
+    except Exception:
+        pass
 
     # Stop email outreach workers
     try:

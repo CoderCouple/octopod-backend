@@ -261,7 +261,79 @@ CREATE INDEX IF NOT EXISTS ln_checkpoints_status_idx ON ln_checkpoints (status);
 
 
 -- ************************************************************
--- SECTION 4: JOB TRACKING
+-- SECTION 4: PIPELINE EXECUTION TRACKING
+-- ************************************************************
+
+CREATE TABLE IF NOT EXISTS pipeline_execution (
+    id                  TEXT PRIMARY KEY DEFAULT 'pe_' || gen_random_uuid(),
+    pipeline_type       VARCHAR(30) NOT NULL,
+    status              VARCHAR(30) NOT NULL DEFAULT 'pending',
+    control_signal      VARCHAR(30) NOT NULL DEFAULT 'none',
+    trigger             VARCHAR(30) NOT NULL DEFAULT 'api',
+    triggered_by        TEXT,
+    input_params        JSONB DEFAULT '{}'::jsonb,
+    total_steps         INTEGER NOT NULL DEFAULT 0,
+    completed_steps     INTEGER NOT NULL DEFAULT 0,
+    current_step_order  INTEGER,
+    started_at          TIMESTAMPTZ,
+    completed_at        TIMESTAMPTZ,
+    duration_ms         INTEGER,
+    error_summary       TEXT,
+    created_at          TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at          TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS pipeline_exec_status_idx ON pipeline_execution (status);
+CREATE INDEX IF NOT EXISTS pipeline_exec_type_idx   ON pipeline_execution (pipeline_type);
+CREATE INDEX IF NOT EXISTS pipeline_exec_started_idx ON pipeline_execution (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS pipeline_execution_step (
+    id                      TEXT PRIMARY KEY DEFAULT 'pes_' || gen_random_uuid(),
+    pipeline_execution_id   TEXT NOT NULL REFERENCES pipeline_execution(id) ON DELETE CASCADE,
+    step_order              INTEGER NOT NULL,
+    step_name               VARCHAR(60) NOT NULL,
+    step_label              VARCHAR(100) NOT NULL,
+    status                  VARCHAR(30) NOT NULL DEFAULT 'pending',
+    ingest_job_id           TEXT,
+    total_items             INTEGER DEFAULT 0,
+    succeeded_count         INTEGER DEFAULT 0,
+    failed_count            INTEGER DEFAULT 0,
+    skipped_count           INTEGER DEFAULT 0,
+    started_at              TIMESTAMPTZ,
+    completed_at            TIMESTAMPTZ,
+    duration_ms             INTEGER,
+    error_summary           TEXT,
+    stats                   JSONB DEFAULT '{}'::jsonb,
+    created_at              TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at              TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS pes_exec_idx ON pipeline_execution_step (pipeline_execution_id);
+CREATE INDEX IF NOT EXISTS pes_order_idx ON pipeline_execution_step (pipeline_execution_id, step_order);
+
+
+-- ************************************************************
+-- SECTION 4b: PIPELINE SCHEDULING
+-- ************************************************************
+
+CREATE TABLE IF NOT EXISTS pipeline_schedule (
+    id              TEXT PRIMARY KEY DEFAULT 'ps_' || gen_random_uuid(),
+    name            VARCHAR(100) NOT NULL,
+    pipeline_type   VARCHAR(30) NOT NULL,
+    input_params    JSONB DEFAULT '{}'::jsonb,
+    cron_expression VARCHAR(100) NOT NULL,
+    is_enabled      BOOLEAN DEFAULT TRUE,
+    last_run_at     TIMESTAMPTZ,
+    next_run_at     TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at      TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS pipeline_sched_enabled_idx ON pipeline_schedule (is_enabled, next_run_at);
+
+
+-- ************************************************************
+-- SECTION 5: JOB TRACKING
 -- ************************************************************
 
 CREATE TABLE IF NOT EXISTS ingest_job (
@@ -803,11 +875,41 @@ ALTER TABLE email_event
 
 
 -- ************************************************************
+-- SECTION 6b: IDENTITY RESOLUTION
+-- ************************************************************
+
+CREATE TABLE IF NOT EXISTS merge_candidate (
+    id                  TEXT PRIMARY KEY DEFAULT 'mc_' || gen_random_uuid(),
+    source_profile_id   TEXT NOT NULL REFERENCES developer_profile(id),
+    target_profile_id   TEXT NOT NULL REFERENCES developer_profile(id),
+    confidence_score    NUMERIC(5,4) NOT NULL,
+    signals             JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status              VARCHAR(30) NOT NULL DEFAULT 'pending',
+    resolved_profile_id TEXT,
+    reviewed_by         TEXT,
+    reviewed_at         TIMESTAMPTZ,
+    merged_at           TIMESTAMPTZ,
+    is_deleted          BOOLEAN DEFAULT FALSE NOT NULL,
+    created_at          TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at          TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT mc_unique_pair UNIQUE (source_profile_id, target_profile_id)
+);
+
+CREATE INDEX IF NOT EXISTS mc_status_idx ON merge_candidate (status);
+CREATE INDEX IF NOT EXISTS mc_score_idx ON merge_candidate (confidence_score DESC);
+CREATE INDEX IF NOT EXISTS mc_source_idx ON merge_candidate (source_profile_id);
+CREATE INDEX IF NOT EXISTS mc_target_idx ON merge_candidate (target_profile_id);
+
+
+-- ************************************************************
 -- SECTION 7: IDEMPOTENT MIGRATIONS (safe to re-run on existing DBs)
 -- ************************************************************
 
 -- Drop FK constraint on gh_commits.author_id (commit authors may not be ingested users)
 ALTER TABLE gh_commits DROP CONSTRAINT IF EXISTS gh_commits_author_id_fkey;
+
+-- Add merged_into_id column for identity resolution soft-delete
+ALTER TABLE developer_profile ADD COLUMN IF NOT EXISTS merged_into_id TEXT;
 
 -- Backfill search_tsv for existing cohesive profiles
 UPDATE cohesive_individual_profile

@@ -89,8 +89,18 @@ async def _collect_users_from_band(
     lo: int,
     hi: int | None,
     max_per_band: int = 1000,
+    *,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+    min_repos: int | None = None,
 ) -> dict[str, UserCandidate]:
     q = f"followers:>{lo}" if hi is None else f"followers:{lo}..{hi}"
+    for lang in (languages or []):
+        q += f" language:{lang}"
+    for topic in (topics or []):
+        q += f" topic:{topic}"
+    if min_repos:
+        q += f" repos:>{min_repos}"
     found: dict[str, UserCandidate] = {}
     page = 1
     per_page = 100
@@ -145,7 +155,11 @@ async def _enrich_follower_counts(
 
 
 async def _collect_top_repo_owners(
-    client: GitHubClient, n_repos: int = 5000
+    client: GitHubClient,
+    n_repos: int = 5000,
+    *,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
 ) -> dict[str, int]:
     owners: dict[str, int] = {}
     star_bands: list[tuple[int, int | None]] = [
@@ -163,6 +177,10 @@ async def _collect_top_repo_owners(
         if collected >= n_repos:
             break
         q = f"stars:>{lo}" if hi is None else f"stars:{lo}..{hi}"
+        for lang in (languages or []):
+            q += f" language:{lang}"
+        for topic in (topics or []):
+            q += f" topic:{topic}"
         page = 1
         while collected < n_repos:
             try:
@@ -222,6 +240,10 @@ async def discover_top_users(
     follower_bands: list[tuple[int, int | None]] | None = None,
     repo_pool_size: int = 5000,
     enrich_concurrency: int = 16,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+    min_repos: int | None = None,
+    min_followers: int | None = None,
 ) -> list[UserCandidate]:
     """Return the top-N users ranked by weighted followers+stars score."""
     from .token_pool import TokenPool
@@ -232,8 +254,12 @@ async def discover_top_users(
         log.info("Phase 1/3: discovering users by follower bands")
         all_users: dict[str, UserCandidate] = {}
         bands = follower_bands or DEFAULT_FOLLOWER_BANDS
+        if min_followers is not None:
+            bands = [(lo, hi) for lo, hi in bands if lo >= min_followers]
         for lo, hi in bands:
-            band_users = await _collect_users_from_band(client, lo, hi)
+            band_users = await _collect_users_from_band(
+                client, lo, hi, languages=languages, topics=topics, min_repos=min_repos
+            )
             log.info(
                 "  band followers %s-%s: +%d users (total unique: %d)",
                 lo,
@@ -247,7 +273,9 @@ async def discover_top_users(
         await _enrich_follower_counts(client, all_users, enrich_concurrency)
 
         log.info("Phase 3/3: collecting top repo owners for star component")
-        owner_stars = await _collect_top_repo_owners(client, repo_pool_size)
+        owner_stars = await _collect_top_repo_owners(
+            client, repo_pool_size, languages=languages, topics=topics
+        )
         for owner, stars in owner_stars.items():
             if owner not in all_users:
                 all_users[owner] = UserCandidate(login=owner)

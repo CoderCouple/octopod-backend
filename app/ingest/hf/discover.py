@@ -34,10 +34,19 @@ class AuthorCandidate:
 
 
 async def _list_top_models(
-    client: HFClient, sort: str, max_models: int
+    client: HFClient,
+    sort: str,
+    max_models: int,
+    *,
+    pipeline_tag: str | None = None,
+    library: str | None = None,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    params = {"sort": sort, "direction": "-1", "limit": 100}
+    params: dict[str, Any] = {"sort": sort, "direction": "-1", "limit": 100}
+    if pipeline_tag:
+        params["pipeline_tag"] = pipeline_tag
+    if library:
+        params["library"] = library
     path = "/api/models"
     next_url: str | None = None
     first = True
@@ -124,15 +133,23 @@ async def discover_top_authors(
     *,
     download_pool_size: int = 20000,
     likes_pool_size: int = 10000,
+    pipeline_tag: str | None = None,
+    library: str | None = None,
 ) -> list[AuthorCandidate]:
     """Return top-N authors by weighted downloads + likes score."""
     async with HFClient(config) as client:
         log.info("Phase 1/2: fetching top %d models by downloads", download_pool_size)
-        by_downloads = await _list_top_models(client, "downloads", download_pool_size)
+        by_downloads = await _list_top_models(
+            client, "downloads", download_pool_size,
+            pipeline_tag=pipeline_tag, library=library,
+        )
         log.info("  got %d models", len(by_downloads))
 
         log.info("Phase 2/2: fetching top %d models by likes", likes_pool_size)
-        by_likes = await _list_top_models(client, "likes", likes_pool_size)
+        by_likes = await _list_top_models(
+            client, "likes", likes_pool_size,
+            pipeline_tag=pipeline_tag, library=library,
+        )
         log.info("  got %d models", len(by_likes))
 
     by_id: dict[str, dict[str, Any]] = {}

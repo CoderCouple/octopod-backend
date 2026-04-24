@@ -26,6 +26,7 @@ qdrant-client = "^1.11.0"
 sentence-transformers = "^3.0.0"
 aiosmtplib = "^3.0.0"
 opensearch-py = "^2.7.0"
+croniter = "^2.0.0"
 prometheus-client = {version = "^0.22.0", optional = true}
 
 [tool.poetry.group.dev.dependencies]

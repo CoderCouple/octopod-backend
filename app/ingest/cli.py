@@ -561,16 +561,115 @@ async def _sync(platform: str, since_hours: int) -> int:
 
 
 async def _embed(batch_size: int, include_opensearch: bool) -> int:
-    log.info("Embed command: batch_size=%d, include_opensearch=%s", batch_size, include_opensearch)
-    # This would use the dual indexer in production
-    log.info("Embed sync completed")
-    return 0
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .common.job_tracker import JobTracker
+    from .pipeline.embed import batch_embed_from_db
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        tracker = JobTracker(pool, "embed")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.EMBED_SYNC,
+            trigger=IngestTrigger.CLI,
+            triggered_by="cli",
+            input_params={"batch_size": batch_size, "include_opensearch": include_opensearch},
+        )
+        await tracker.mark_running()
+        log.info("Embed job %s started (batch_size=%d)", job_id, batch_size)
+
+        from app.db.qdrant_client import get_qdrant_client
+        from app.ingest.bridge.indexer import DualIndexer
+        from app.service.embedding.sentence_transformer_provider import SentenceTransformerProvider
+
+        qdrant_client = get_qdrant_client()
+        embedding_provider = SentenceTransformerProvider()
+        opensearch_client = None
+        if include_opensearch:
+            try:
+                from app.db.opensearch_client import get_opensearch_client
+
+                opensearch_client = get_opensearch_client()
+            except Exception:
+                log.warning("OpenSearch not available, skipping")
+
+        indexer = DualIndexer(
+            qdrant_client=qdrant_client,
+            opensearch_client=opensearch_client,
+            embedding_provider=embedding_provider,
+        )
+
+        stats = await batch_embed_from_db(pool=pool, indexer=indexer, batch_size=batch_size)
+        await tracker.mark_completed({
+            "processed": stats["total"],
+            "succeeded": stats["embedded"],
+            "failed": stats["errors"],
+            "skipped": stats["skipped"],
+        })
+        log.info("Embed job %s completed: %s", job_id, stats)
+        return 0 if stats["errors"] == 0 else 1
+    except Exception as e:
+        await tracker.mark_failed(str(e))
+        raise
+    finally:
+        await pool.close()
+
+
+# ---- Identity resolve command ----
+
+
+async def _identity_resolve(since_hours: int, full_scan: bool) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .bridge.resolver import IdentityResolver
+    from .common.job_tracker import JobTracker
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        tracker = JobTracker(pool, "identity")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.IDENTITY_RESOLVE,
+            trigger=IngestTrigger.CLI,
+            triggered_by="cli",
+            input_params={"since_hours": since_hours, "full_scan": full_scan},
+        )
+        await tracker.mark_running()
+        log.info("Identity resolve job %s started (since_hours=%d, full_scan=%s)",
+                 job_id, since_hours, full_scan)
+
+        resolver = IdentityResolver(pool)
+        stats = await resolver.run(since_hours=since_hours, full_scan=full_scan)
+        await tracker.mark_completed({
+            "total_candidates": stats.total_candidates,
+            "auto_merged": stats.auto_merged,
+            "queued_for_review": stats.queued_for_review,
+            "skipped": stats.skipped,
+            "errors": stats.errors,
+        })
+        log.info("Identity resolve job %s completed: %d merged, %d queued, %d skipped",
+                 job_id, stats.auto_merged, stats.queued_for_review, stats.skipped)
+        return 0 if stats.errors == 0 else 1
+    except Exception as e:
+        await tracker.mark_failed(str(e))
+        raise
+    finally:
+        await pool.close()
 
 
 # ---- Pipeline commands ----
 
 
-async def _pipeline_daily() -> int:
+async def _pipeline_daily(
+    top: int = 5000,
+    alpha: float = 0.5,
+    since_hours: int = 24,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+) -> int:
     import asyncpg
 
     from .bridge.config import BridgeConfig
@@ -580,7 +679,12 @@ async def _pipeline_daily() -> int:
     pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
     try:
         runner = PipelineRunner(pool)
-        results = await runner.run_daily()
+        params: dict = {"top": top, "alpha": alpha, "since_hours": since_hours}
+        if languages:
+            params["languages"] = languages
+        if topics:
+            params["topics"] = topics
+        results = await runner.run_daily(input_params=params)
         if "error" in results:
             return 1
         return 0
@@ -588,7 +692,7 @@ async def _pipeline_daily() -> int:
         await pool.close()
 
 
-async def _pipeline_weekly() -> int:
+async def _pipeline_weekly(since_hours: int = 168, max_profiles: int = 5000) -> int:
     import asyncpg
 
     from .bridge.config import BridgeConfig
@@ -598,7 +702,181 @@ async def _pipeline_weekly() -> int:
     pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
     try:
         runner = PipelineRunner(pool)
-        results = await runner.run_weekly()
+        results = await runner.run_weekly(
+            input_params={"since_hours": since_hours, "max_profiles": max_profiles}
+        )
+        if "error" in results:
+            return 1
+        return 0
+    finally:
+        await pool.close()
+
+
+async def _pipeline_seed(
+    top: int = 1000,
+    alpha: float = 0.5,
+    logins: list[str] | None = None,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+    min_repos: int | None = None,
+    hf_pipeline_tag: str | None = None,
+    hf_library: str | None = None,
+    batch_size: int = 200,
+) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .pipeline.runner import PipelineRunner
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        runner = PipelineRunner(pool)
+        params: dict = {"top": top, "alpha": alpha, "batch_size": batch_size}
+        if logins:
+            params["logins"] = logins
+        if languages:
+            params["languages"] = languages
+        if topics:
+            params["topics"] = topics
+        if min_repos:
+            params["min_repos"] = min_repos
+        if hf_pipeline_tag:
+            params["hf_pipeline_tag"] = hf_pipeline_tag
+        if hf_library:
+            params["hf_library"] = hf_library
+        results = await runner.run(
+            pipeline_type="seed",
+            trigger="cli",
+            triggered_by="cli",
+            input_params=params,
+        )
+        if "error" in results:
+            return 1
+        return 0
+    finally:
+        await pool.close()
+
+
+# ---- Individual + Dependent pipeline commands ----
+
+
+async def _pipeline_gh(
+    top: int = 5000,
+    alpha: float = 0.5,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .pipeline.runner import PipelineRunner
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        runner = PipelineRunner(pool)
+        params: dict = {"top": top, "alpha": alpha}
+        if languages:
+            params["languages"] = languages
+        if topics:
+            params["topics"] = topics
+        results = await runner.run(
+            pipeline_type="gh_only",
+            trigger="cli",
+            triggered_by="cli",
+            input_params=params,
+        )
+        if "error" in results:
+            return 1
+        return 0
+    finally:
+        await pool.close()
+
+
+async def _pipeline_hf(
+    top: int = 5000,
+    alpha: float = 0.5,
+    hf_pipeline_tag: str | None = None,
+    hf_library: str | None = None,
+) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .pipeline.runner import PipelineRunner
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        runner = PipelineRunner(pool)
+        params: dict = {"top": top, "alpha": alpha}
+        if hf_pipeline_tag:
+            params["hf_pipeline_tag"] = hf_pipeline_tag
+        if hf_library:
+            params["hf_library"] = hf_library
+        results = await runner.run(
+            pipeline_type="hf_only",
+            trigger="cli",
+            triggered_by="cli",
+            input_params=params,
+        )
+        if "error" in results:
+            return 1
+        return 0
+    finally:
+        await pool.close()
+
+
+async def _pipeline_ln(max_profiles: int = 5000) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .pipeline.runner import PipelineRunner
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        runner = PipelineRunner(pool)
+        results = await runner.run(
+            pipeline_type="ln_only",
+            trigger="cli",
+            triggered_by="cli",
+            input_params={"max_profiles": max_profiles},
+        )
+        if "error" in results:
+            return 1
+        return 0
+    finally:
+        await pool.close()
+
+
+async def _pipeline_dependent(
+    top: int = 5000,
+    alpha: float = 0.5,
+    since_hours: int = 24,
+    languages: list[str] | None = None,
+    topics: list[str] | None = None,
+) -> int:
+    import asyncpg
+
+    from .bridge.config import BridgeConfig
+    from .pipeline.runner import PipelineRunner
+
+    config = BridgeConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=2, max_size=5)
+    try:
+        runner = PipelineRunner(pool)
+        params: dict = {"top": top, "alpha": alpha, "since_hours": since_hours}
+        if languages:
+            params["languages"] = languages
+        if topics:
+            params["topics"] = topics
+        results = await runner.run(
+            pipeline_type="dependent",
+            trigger="cli",
+            triggered_by="cli",
+            input_params=params,
+        )
         if "error" in results:
             return 1
         return 0
@@ -775,6 +1053,11 @@ def main() -> int:
     p.add_argument("--status", default="failed")
     p.add_argument("--max-attempts", type=int, default=3)
 
+    # Identity resolve
+    p = sub.add_parser("identity-resolve", help="Run identity resolution across developer profiles")
+    p.add_argument("--since-hours", type=int, default=24)
+    p.add_argument("--full-scan", action="store_true", help="Scan all profiles, not just recent")
+
     # Bridge sync
     p = sub.add_parser("sync", help="Run bridge sync (raw → domain → aggregated → cohesive)")
     p.add_argument("--platform", default="all", choices=["all", "gh_only", "hf_only", "ln_only"])
@@ -786,8 +1069,51 @@ def main() -> int:
     p.add_argument("--include-opensearch", action="store_true")
 
     # Pipeline
-    sub.add_parser("pipeline-daily", help="Run full daily pipeline")
-    sub.add_parser("pipeline-weekly", help="Run weekly LinkedIn enrichment pipeline")
+    p = sub.add_parser("pipeline-daily", help="Run full daily pipeline")
+    p.add_argument("--top", type=int, default=5000)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--since-hours", type=int, default=24)
+    p.add_argument("--language", action="append", default=[], dest="languages")
+    p.add_argument("--topic", action="append", default=[], dest="topics")
+
+    p = sub.add_parser("pipeline-weekly", help="Run weekly LinkedIn enrichment pipeline")
+    p.add_argument("--since-hours", type=int, default=168)
+    p.add_argument("--max-profiles", type=int, default=5000)
+
+    p = sub.add_parser("pipeline-seed", help="Run seed pipeline (GH discover → ingest → sync → embed)")
+    p.add_argument("--top", type=int, default=1000)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--input", type=Path, help="File with logins")
+    p.add_argument("--login", action="append", default=[], help="Specific login")
+    p.add_argument("--language", action="append", default=[], dest="languages")
+    p.add_argument("--topic", action="append", default=[], dest="topics")
+    p.add_argument("--min-repos", type=int)
+    p.add_argument("--hf-pipeline-tag", type=str)
+    p.add_argument("--hf-library", type=str)
+    p.add_argument("--batch-size", type=int, default=200)
+
+    # Individual pipelines
+    p = sub.add_parser("pipeline-gh", help="Run GH-only pipeline (discover + ingest)")
+    p.add_argument("--top", type=int, default=5000)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--language", action="append", default=[], dest="languages")
+    p.add_argument("--topic", action="append", default=[], dest="topics")
+
+    p = sub.add_parser("pipeline-hf", help="Run HF-only pipeline (discover + ingest)")
+    p.add_argument("--top", type=int, default=5000)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--hf-pipeline-tag", type=str)
+    p.add_argument("--hf-library", type=str)
+
+    p = sub.add_parser("pipeline-ln", help="Run LN-only pipeline (discover + ingest)")
+    p.add_argument("--max-profiles", type=int, default=5000)
+
+    p = sub.add_parser("pipeline-dependent", help="Run dependent pipeline (GH → HF/LN crossref → sync → embed)")
+    p.add_argument("--top", type=int, default=5000)
+    p.add_argument("--alpha", type=float, default=0.5)
+    p.add_argument("--since-hours", type=int, default=24)
+    p.add_argument("--language", action="append", default=[], dest="languages")
+    p.add_argument("--topic", action="append", default=[], dest="topics")
 
     # Status
     sub.add_parser("status", help="Show checkpoint summary for all platforms")
@@ -846,6 +1172,9 @@ def main() -> int:
     if args.cmd == "ln-retry":
         return asyncio.run(_ln_retry(args.status, args.max_attempts))
 
+    if args.cmd == "identity-resolve":
+        return asyncio.run(_identity_resolve(args.since_hours, args.full_scan))
+
     if args.cmd == "sync":
         return asyncio.run(_sync(args.platform, args.since_hours))
 
@@ -853,10 +1182,61 @@ def main() -> int:
         return asyncio.run(_embed(args.batch_size, args.include_opensearch))
 
     if args.cmd == "pipeline-daily":
-        return asyncio.run(_pipeline_daily())
+        return asyncio.run(_pipeline_daily(
+            top=args.top,
+            alpha=args.alpha,
+            since_hours=args.since_hours,
+            languages=args.languages or None,
+            topics=args.topics or None,
+        ))
 
     if args.cmd == "pipeline-weekly":
-        return asyncio.run(_pipeline_weekly())
+        return asyncio.run(_pipeline_weekly(
+            since_hours=args.since_hours,
+            max_profiles=args.max_profiles,
+        ))
+
+    if args.cmd == "pipeline-seed":
+        logins = _load_logins(getattr(args, "input", None), args.login)
+        return asyncio.run(_pipeline_seed(
+            top=args.top,
+            alpha=args.alpha,
+            logins=logins or None,
+            languages=args.languages or None,
+            topics=args.topics or None,
+            min_repos=args.min_repos,
+            hf_pipeline_tag=args.hf_pipeline_tag,
+            hf_library=args.hf_library,
+            batch_size=args.batch_size,
+        ))
+
+    if args.cmd == "pipeline-gh":
+        return asyncio.run(_pipeline_gh(
+            top=args.top,
+            alpha=args.alpha,
+            languages=args.languages or None,
+            topics=args.topics or None,
+        ))
+
+    if args.cmd == "pipeline-hf":
+        return asyncio.run(_pipeline_hf(
+            top=args.top,
+            alpha=args.alpha,
+            hf_pipeline_tag=args.hf_pipeline_tag,
+            hf_library=args.hf_library,
+        ))
+
+    if args.cmd == "pipeline-ln":
+        return asyncio.run(_pipeline_ln(max_profiles=args.max_profiles))
+
+    if args.cmd == "pipeline-dependent":
+        return asyncio.run(_pipeline_dependent(
+            top=args.top,
+            alpha=args.alpha,
+            since_hours=args.since_hours,
+            languages=args.languages or None,
+            topics=args.topics or None,
+        ))
 
     if args.cmd == "status":
         return asyncio.run(_status())
