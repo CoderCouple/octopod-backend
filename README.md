@@ -1,10 +1,10 @@
 # Octopod Backend
 
-A crowdsourced, time-aware organizational graph system built with FastAPI. Octopod models employees, organizations, and reporting relationships over time using crowdsourced claims with a state-machine-driven verification workflow, confidence scoring for trust, event sourcing for auditability, and progressive visibility (Glassdoor-style) for incentives.
+A B2B SaaS platform for developer intelligence — ingesting profiles from **GitHub**, **HuggingFace**, and **LinkedIn**, merging them into cohesive identities, computing ranking scores, and enabling semantic search. Includes a multi-step email outreach system and a crowdsourced org graph.
+
+Built with **FastAPI**, **PostgreSQL**, **Qdrant** vector DB, and **asyncpg**.
 
 ## Architecture
-
-The application follows a clean layered architecture:
 
 ```
 Controller (API) -> Service (Business Logic) -> Repository (Data Access) -> Model (ORM)
@@ -17,7 +17,7 @@ Controller (API) -> Service (Business Logic) -> Repository (Data Access) -> Mode
 - **Controller layer** handles HTTP concerns, dependency injection, and response wrapping
 - **Service layer** contains all business logic, validation, and event logging
 - **Repository layer** provides data access abstraction with flush-not-commit semantics
-- **Model layer** defines SQLAlchemy ORM models with prefixed UUIDs (e.g. `org_`, `emp_`, `claim_`)
+- **Model layer** defines SQLAlchemy ORM models with prefixed UUIDs (e.g. `org_`, `emp_`, `ij_`)
 - **Request/Response DTOs** separate API contracts from internal models
 
 ## Project Structure
@@ -34,18 +34,23 @@ octopod-backend/
 │   │       ├── router.py               # V1 router aggregating all controllers
 │   │       ├── controller/
 │   │       │   ├── health_api.py        # GET /health, GET /ready
-│   │       │   ├── org_api.py           # Organization CRUD
-│   │       │   ├── employee_api.py      # Employee CRUD + employment lookups
-│   │       │   ├── employment_api.py    # Employment CRUD + end employment
-│   │       │   ├── relationship_api.py  # Reporting relationships (read-only)
-│   │       │   ├── claim_api.py         # Claim lifecycle (submit/confirm/reject)
-│   │       │   ├── graph_api.py         # Org graph + cycle detection
-│   │       │   └── timeline_api.py      # Career timeline + reporting history
+│   │       │   ├── developer_profile_api.py  # Profile CRUD, ingest, search, ranking
+│   │       │   ├── ingest_source_api.py      # GH/HF/LN discover + run (6 endpoints)
+│   │       │   ├── ingest_job_api.py         # Job monitoring, status, retry (7 endpoints)
+│   │       │   ├── ingest_pipeline_api.py    # Pipeline execution, sync, embed (10 endpoints)
+│   │       │   ├── ingest_schedule_api.py    # Schedule CRUD (4 endpoints)
+│   │       │   ├── ingest_identity_api.py    # Identity resolution (6 endpoints)
+│   │       │   ├── mailbox_api.py            # Email mailbox management
+│   │       │   ├── email_template_api.py     # Email template CRUD
+│   │       │   ├── email_campaign_api.py     # Campaign lifecycle
+│   │       │   ├── email_tracking_api.py     # Open/click tracking pixels
+│   │       │   └── email_enrichment_api.py   # Email discovery for profiles
 │   │       ├── request/                 # Pydantic request schemas
 │   │       └── response/               # Pydantic response schemas
 │   ├── common/
 │   │   ├── auth/auth.py                 # Actor ID extraction from headers
-│   │   ├── enum/                        # Enums (claim states, relationship types, etc.)
+│   │   ├── enum/                        # Enums (ingest job types, claim states, etc.)
+│   │   ├── ingest_common.py             # Shared ingest helpers
 │   │   ├── exceptions.py               # Custom HTTP exceptions
 │   │   ├── hashing.py                   # SHA-256 event hash computation
 │   │   └── pagination.py               # Generic pagination params/response
@@ -53,27 +58,43 @@ octopod-backend/
 │   │   ├── base.py                      # SQLAlchemy DeclarativeBase
 │   │   ├── engine.py                    # Async/sync engine factories (cached)
 │   │   ├── session.py                   # get_db() async session dependency
+│   │   ├── qdrant_client.py             # Qdrant vector DB client
 │   │   └── repository/                  # Data access repositories
-│   ├── model/                           # SQLAlchemy ORM models (9 tables)
+│   ├── ingest/                          # Ingestion pipeline
+│   │   ├── gh/                          # GitHub: client, config, discover, orchestrator, storage
+│   │   ├── hf/                          # HuggingFace: client, config, discover, orchestrator, storage
+│   │   ├── ln/                          # LinkedIn: client (Proxycurl), config, discover, orchestrator
+│   │   ├── bridge/                      # Bridge sync: raw -> domain -> cohesive profiles
+│   │   │   ├── orchestrator.py          # Bridge sync orchestrator
+│   │   │   ├── storage.py               # Profile merge, aggregation, indexing
+│   │   │   ├── resolver.py              # Identity resolution (cross-platform dedup)
+│   │   │   └── indexer.py               # Dual indexer (Qdrant + OpenSearch)
+│   │   ├── pipeline/                    # Pipeline orchestration
+│   │   │   ├── runner.py                # Step-based pipeline runner
+│   │   │   ├── tracker.py               # Execution tracking (pause/resume/cancel)
+│   │   │   ├── steps.py                 # Pipeline step definitions
+│   │   │   ├── scheduler.py             # Cron-based pipeline scheduler
+│   │   │   └── embed.py                 # Batch embedding to Qdrant
+│   │   ├── common/
+│   │   │   └── job_tracker.py           # DB-backed job tracking (ingest_job + ingest_job_item)
+│   │   └── cli.py                       # CLI for running ingestion
+│   ├── model/                           # SQLAlchemy ORM models
 │   ├── service/                         # Business logic services
-│   │   ├── org_service.py               # Organization CRUD with event logging
-│   │   ├── employee_service.py          # Employee CRUD with event logging
-│   │   ├── employment_service.py        # Employment lifecycle + career events
-│   │   ├── event_log_service.py         # Append-only event log with hash chaining
-│   │   ├── claim_service.py             # Full claim lifecycle orchestration
-│   │   ├── state_machine.py             # Claim state transition table
-│   │   ├── resolution_engine.py         # Confidence scoring (Decimal arithmetic)
+│   │   ├── embedding/                   # Sentence transformer provider
+│   │   ├── campaign_service.py          # Email campaign orchestration
+│   │   ├── mailbox_service.py           # Mailbox management
+│   │   ├── email_enrichment_service.py  # Email discovery
 │   │   ├── graph_service.py             # Org graph + DFS cycle detection
-│   │   ├── timeline_service.py          # Career timeline queries
-│   │   ├── contributor_service.py       # Contributor scoring + visibility levels
-│   │   └── visibility_service.py        # BFS-based graph visibility filtering
+│   │   └── ...                          # Other services
+│   ├── outreach/                        # Email sending infrastructure
 │   └── middleware/
 │       └── actor_context.py             # Actor context middleware
-├── tests/                               # pytest test suite (59 tests)
+├── tests/                               # pytest test suite
 ├── sql/
 │   └── schema.sql                       # PostgreSQL schema + seed data
+├── docs/                                # Architecture documentation
 ├── alembic/                             # Database migration scripts
-├── docker-compose.yml                   # Docker services (app, postgres, pgadmin)
+├── docker-compose.yml                   # Docker services
 ├── Dockerfile                           # Python 3.11 + Poetry container
 ├── Makefile                             # Development commands
 └── pyproject.toml                       # Poetry dependencies + tool configs
@@ -87,8 +108,6 @@ octopod-backend/
 
 ## Quick Start (Docker)
 
-The fastest way to get everything running:
-
 ```bash
 # 1. Clone and enter the project
 cd octopod-backend
@@ -96,22 +115,21 @@ cd octopod-backend
 # 2. Copy the environment file
 cp .env.example .env
 
-# 3. Start all services (app + postgres + pgadmin)
+# 3. Start all services (app + postgres + pgadmin + qdrant)
 make docker-up
 
 # 4. Verify it's running
 curl http://localhost:8000/api/v1/health
 ```
 
-This starts three containers:
+This starts the following containers:
 
 | Service | URL | Description |
 |---------|-----|-------------|
 | **web** | http://localhost:8000 | FastAPI application |
 | **db** | localhost:5432 | PostgreSQL 16 |
 | **pgadmin** | http://localhost:8080 | pgAdmin (admin@octopod.dev / octopod) |
-
-The database schema and seed data are automatically loaded from `sql/schema.sql` on first startup.
+| **qdrant** | http://localhost:6333/dashboard | Qdrant vector database |
 
 ### Docker Commands
 
@@ -140,14 +158,7 @@ psql -U octopod -d octopod_db -f sql/schema.sql
 make dev
 ```
 
-The server starts at http://localhost:8000. Swagger docs are at http://localhost:8000/docs.
-
-### Running from PyCharm
-
-1. Create a new **Python** run configuration
-2. Set **Script path** to the project's `octopod_app.py`
-3. Set **Working directory** to the project root
-4. Run it
+The server starts at http://localhost:8000. Swagger docs at http://localhost:8000/docs.
 
 ## Development Commands
 
@@ -162,20 +173,6 @@ make pre-commit-run   # Run pre-commit on all files
 make migrate          # Apply Alembic database migrations
 ```
 
-## Running Tests
-
-Tests use an in-memory SQLite database and require no external services:
-
-```bash
-make test
-# or
-poetry run pytest -v
-```
-
-The test suite includes 59 tests covering:
-- **API tests** -- health, org, employee, employment, claim, graph, timeline endpoints
-- **Service tests** -- event log, state machine, resolution engine, contributor scoring, visibility filtering
-
 ## API Endpoints
 
 All endpoints are under `/api/v1`. Interactive Swagger docs at `/docs`.
@@ -184,161 +181,184 @@ All endpoints are under `/api/v1`. Interactive Swagger docs at `/docs`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Liveness probe -- returns `{"status": "healthy"}` |
-| GET | `/ready` | Readiness probe -- checks database and cache dependencies |
+| GET | `/health` | Liveness probe |
+| GET | `/ready` | Readiness probe -- checks database and dependencies |
 
-### Organizations
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/org` | Create a new organization |
-| GET | `/org` | List organizations (paginated) |
-| GET | `/org/{org_id}` | Get organization by ID |
-| PATCH | `/org/{org_id}` | Partial update (name, domain, industry, etc.) |
-| DELETE | `/org/{org_id}` | Soft-delete organization |
-
-### Employees
+### Developer Profiles
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/employee` | Create a new employee |
-| GET | `/employee` | List employees (paginated) |
-| GET | `/employee/{id}` | Get employee by ID |
-| PATCH | `/employee/{id}` | Partial update (name, email, profile data) |
-| GET | `/employee/{id}/employments` | List employee's employment history |
+| POST | `/developer-profile` | Create profile with platform identifiers |
+| GET | `/developer-profile` | List profiles (paginated) |
+| GET | `/developer-profile/{id}` | Get profile by ID |
+| PATCH | `/developer-profile/{id}` | Update platform identifiers |
+| POST | `/developer-profile/{id}/ingest` | Trigger ingestion (202) |
+| GET | `/developer-profile/{id}/status` | Check ingestion status |
+| GET | `/developer-profile/{id}/cohesive` | Get merged profile |
+| POST | `/developer-profile/{id}/merge` | Force re-merge |
+| GET | `/developer-profile/{id}/ranking` | Get ranking scores |
+| POST | `/developer-profile/rank` | Rank profiles with custom weights |
+| POST | `/developer-profile/search` | Semantic search |
 
-### Employments
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/employment` | Create employment (links employee to org, creates JOIN event) |
-| GET | `/employment/{id}` | Get employment by ID |
-| PATCH | `/employment/{id}` | Partial update (title, department, level, etc.) |
-| POST | `/employment/{id}/end` | End employment (sets end date, creates LEAVE event) |
-
-### Reporting Relationships (read-only)
-
-Relationships are created via the claims workflow, not directly.
+### Ingestion -- Source Discovery & Run
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/relationship` | List relationships (filter by org, employee, manager, is_current) |
-| GET | `/relationship/{id}` | Get relationship by ID |
+| POST | `/ingest/gh/discover` | Discover top GitHub users by ranking |
+| POST | `/ingest/gh/run` | Ingest GitHub profiles by login |
+| POST | `/ingest/hf/discover` | Discover top HuggingFace authors |
+| POST | `/ingest/hf/run` | Ingest HuggingFace profiles |
+| POST | `/ingest/ln/discover` | Extract LinkedIn URLs from GH/HF data |
+| POST | `/ingest/ln/run` | Ingest LinkedIn profiles via Proxycurl |
 
-### Claims (Crowdsourced Verification)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/claim` | Submit a reporting-relationship claim |
-| GET | `/claim` | List claims (filter by org, employee, claimant, state) |
-| GET | `/claim/pending` | Get claims pending your confirmation (uses X-Actor-Id header) |
-| GET | `/claim/{id}` | Get claim details + allowed state-machine actions |
-| POST | `/claim/{id}/confirm` | Confirm or reject a pending claim |
-
-### Graph
+### Ingestion -- Job Monitoring
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/graph/org/{org_id}` | Get the org reporting graph (nodes + edges), filtered by visibility |
-| GET | `/graph/org/{org_id}/cycles` | Detect cycles in the reporting graph |
+| GET | `/ingest/status` | Checkpoint summary (GH + HF counts) |
+| POST | `/ingest/retry` | Retry failed ingestions |
+| GET | `/ingest/jobs` | List jobs (filter by platform, status) |
+| GET | `/ingest/jobs/{job_id}` | Job detail with item counts |
+| GET | `/ingest/jobs/{job_id}/items` | Job items list |
+| GET | `/ingest/jobs/{job_id}/data` | Ingested data for job |
+| GET | `/ingest/jobs/{job_id}/data/{login}` | Single user data |
 
-### Timeline
+### Ingestion -- Pipeline
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/timeline/employee/{id}` | Career event timeline (join, leave, promotion, etc.) |
-| GET | `/timeline/employee/{id}/reporting-history` | Reporting relationship change history |
+| POST | `/ingest/sync` | Trigger bridge sync (raw -> cohesive) |
+| POST | `/ingest/embed` | Trigger batch embedding to Qdrant |
+| POST | `/ingest/pipeline/start` | Start a pipeline (daily, weekly, seed, etc.) |
+| GET | `/ingest/pipeline/active` | List running/paused pipelines |
+| GET | `/ingest/pipeline/{execution_id}` | Execution detail with steps |
+| POST | `/ingest/pipeline/{execution_id}/pause` | Pause pipeline |
+| POST | `/ingest/pipeline/{execution_id}/resume` | Resume paused pipeline |
+| POST | `/ingest/pipeline/{execution_id}/cancel` | Cancel pipeline |
+| POST | `/ingest/pipeline/{execution_id}/rerun` | Rerun with same config |
+| GET | `/ingest/pipeline/status` | Pipeline health dashboard |
 
-## Core Concepts
+### Ingestion -- Schedule
 
-### Claim Lifecycle
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/ingest/schedule` | Create a pipeline schedule (cron) |
+| GET | `/ingest/schedules` | List all schedules |
+| PUT | `/ingest/schedule/{id}` | Update a schedule |
+| DELETE | `/ingest/schedule/{id}` | Delete a schedule |
 
-Claims go through a state machine workflow:
+### Ingestion -- Identity Resolution
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/ingest/identity/candidates` | List merge candidates |
+| GET | `/ingest/identity/candidates/{id}` | Candidate detail with profiles |
+| POST | `/ingest/identity/candidates/{id}/approve` | Approve and merge |
+| POST | `/ingest/identity/candidates/{id}/reject` | Reject candidate |
+| POST | `/ingest/identity/resolve` | Trigger resolution scan |
+| GET | `/ingest/identity/stats` | Resolution stats |
+
+### Email Outreach
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/mailbox/connect/smtp` | Connect SMTP mailbox |
+| GET | `/mailbox` | List mailboxes |
+| GET | `/mailbox/{id}` | Get mailbox detail |
+| PATCH | `/mailbox/{id}` | Update mailbox settings |
+| DELETE | `/mailbox/{id}` | Disconnect mailbox |
+| POST | `/email-template` | Create email template |
+| GET | `/email-template` | List templates |
+| GET | `/email-template/{id}` | Get template |
+| PATCH | `/email-template/{id}` | Update template |
+| DELETE | `/email-template/{id}` | Delete template |
+| POST | `/email-campaign` | Create campaign |
+| GET | `/email-campaign` | List campaigns |
+| GET | `/email-campaign/{id}` | Get campaign detail |
+| POST | `/email-campaign/{id}/launch` | Launch campaign |
+| POST | `/email-campaign/{id}/pause` | Pause campaign |
+| POST | `/email-campaign/{id}/resume` | Resume campaign |
+| POST | `/email-enrichment/batch` | Batch email discovery |
+
+## Ingestion Pipeline
+
+The ingestion system operates in stages:
 
 ```
-DRAFT -> SUBMITTED -> VALIDATION -> PENDING_COUNTERPARTY
-                                         |
-                              confirm -> VERIFIED (creates relationship)
-                              reject  -> REJECTED
-                              expire  -> EXPIRED (after 14 days)
-                              dispute -> DISPUTED -> PENDING_MODERATION
-                                                          |
-                                               approve -> VERIFIED
-                                               reject  -> REJECTED
+1. Discover   ->  Find top users on GH/HF, extract LN URLs
+2. Ingest     ->  Fetch full profiles + repos/models/datasets
+3. Bridge Sync ->  Merge raw data into developer_profile + cohesive_individual_profile
+4. Identity   ->  Cross-platform deduplication (email, name, username matching)
+5. Embed      ->  Generate embeddings and index into Qdrant for search
 ```
 
-Any state can transition to **SUPERSEDED** via the `supersede` action.
+Each stage is tracked via `ingest_job` + `ingest_job_item` tables with status, timing, and error details.
 
-When a claim is **VERIFIED**, it automatically creates or updates the canonical reporting relationship in the `reporting_relationship` table.
+### Pipeline Types
 
-### Event Sourcing
+| Type | Steps |
+|------|-------|
+| `daily` | GH discover -> GH ingest -> HF discover -> HF ingest -> Bridge sync -> Embed |
+| `weekly` | Daily steps + LN discover -> LN ingest -> Identity resolve |
+| `seed` | Full pipeline for initial data load |
+| `gh_only` | GH discover -> GH ingest -> Bridge sync |
+| `hf_only` | HF discover -> HF ingest -> Bridge sync |
+| `ln_only` | LN discover -> LN ingest -> Bridge sync |
 
-Every mutation (create, update, delete) appends an immutable event to the `event_log` table. Events are linked via SHA-256 hash chaining for tamper detection:
+Full pipelines (`daily`, `weekly`, `seed`) block each other; individual platform runs can be parallel.
 
+### Merge Priority Rules
+
+When multiple platforms provide the same field:
+
+| Field | Priority |
+|-------|----------|
+| display_name, bio, headline | LinkedIn > GitHub > HuggingFace |
+| avatar_url | GitHub > LinkedIn > HuggingFace |
+| company | LinkedIn > GitHub |
+| skills | Union of all sources |
+| languages | GitHub (from repo stats) |
+| job_history | LinkedIn (authoritative) |
+
+### Ranking Scores
+
+8 component scores (each 0.0--1.0) combined into a weighted composite:
+
+| Component | Weight | Key Inputs |
+|-----------|--------|------------|
+| github_activity | 0.20 | contributions, repos |
+| technical_influence | 0.15 | stars, followers, downloads |
+| hiring_fit | 0.15 | skills, title, company |
+| experience | 0.15 | years of experience |
+| skills_breadth | 0.10 | unique skills + languages |
+| recency | 0.10 | days since last activity |
+| oss_contribution | 0.10 | non-fork repos, topics |
+| hf_impact | 0.05 | models, datasets, downloads |
+
+Weights are customizable via the `/rank` endpoint.
+
+## Setup -- API Keys
+
+Configure in `.env`:
+
+```env
+# Required for GitHub (60 req/hr without, 5000/hr with)
+GITHUB_TOKEN=ghp_your_personal_access_token
+
+# Required for LinkedIn profiles (paid API - https://nubela.co/proxycurl)
+PROXYCURL_API_KEY=your_key_here
+
+# Optional for HuggingFace (public API works without)
+HUGGINGFACE_TOKEN=hf_your_token_here
+
+# Qdrant (defaults work with docker compose)
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
 ```
-event_hash = SHA256(prev_hash + entity_type + entity_id + action + after_state + actor_id + timestamp)
-```
 
-The chain integrity can be verified via `EventLogService.verify_chain_integrity()`.
-
-### Confidence Scoring
-
-The resolution engine computes confidence scores for claims using weighted evidence:
-
-| Evidence Type | Weight |
-|--------------|--------|
-| Self-claim | +0.45 |
-| Manager confirmation | +0.40 |
-| Peer confirmation | +0.10 |
-| System verification | +0.80 |
-| Rejection | -0.80 |
-
-Scores are clamped to `[0.0, 1.0]` and determine relationship status:
-- **>= 0.90**: `confirmed`
-- **>= 0.65**: `probable`
-- **< 0.65**: `weak`
-
-### Visibility Levels (Progressive Disclosure)
-
-Contributors earn visibility into the org graph by participating:
-
-| Level | Required Score | Graph Access |
-|-------|---------------|-------------|
-| 0 (None) | < 1 | Only direct edges, names blurred |
-| 1 (Basic) | >= 1 | 2-hop BFS from self, names blurred |
-| 2 (Extended) | >= 5 | 5-hop BFS from self, names visible |
-| 3 (Full) | >= 10 | Full graph access |
-
-Scoring formula:
-```
-raw_score = (claims_submitted * 1) + (claims_verified * 3) + (confirmations * 2) - (rejections * 0.5)
-```
-
-### Cycle Detection
-
-The graph service uses DFS-based cycle detection to prevent circular reporting chains. Before promoting a verified claim to a canonical relationship, the system checks `would_create_cycle()` and skips promotion if a cycle would result.
-
-### Single Solid-Line Manager
-
-Each employee can have at most one confirmed solid-line manager per organization. If a new claim conflicts with an existing solid-line relationship, the new relationship is automatically downgraded to `dotted_line`.
+> **Minimum to start:** Just `GITHUB_TOKEN`. Create a free personal access token at https://github.com/settings/tokens (no special scopes needed -- public data only).
 
 ## Database
-
-### Schema
-
-The database schema is defined in `sql/schema.sql` and includes 9 tables:
-
-| Table | PK Prefix | Description |
-|-------|----------|-------------|
-| `organization` | `org_` | Companies and organizations |
-| `employee` | `emp_` | Individual employees |
-| `employment` | `empl_` | Employee-organization relationships over time |
-| `reporting_relationship` | `rr_` | Manager-subordinate relationships |
-| `career_event` | `ce_` | Career milestones (join, leave, promotion, etc.) |
-| `event_log` | `evt_` | Immutable audit log with hash chaining |
-| `reporting_claim` | `claim_` | Crowdsourced relationship claims |
-| `claim_evidence` | `evi_` | Evidence supporting/refuting claims |
-| `contributor_score` | `cs_` | Per-actor scoring and visibility levels |
 
 ### Migrations
 
@@ -368,147 +388,25 @@ make migrate
 | `ALGORITHM` | HS256 | JWT algorithm |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 30 | Token expiry time |
 | `ALLOWED_ORIGINS` | ["*"] | CORS allowed origins |
+| `GITHUB_TOKEN` | -- | GitHub personal access token |
+| `PROXYCURL_API_KEY` | -- | Proxycurl API key for LinkedIn |
+| `HUGGINGFACE_TOKEN` | -- | HuggingFace API token |
+| `QDRANT_HOST` | localhost | Qdrant vector DB host |
+| `QDRANT_PORT` | 6333 | Qdrant vector DB port |
 
 ## Tech Stack
 
 - **FastAPI** -- Async web framework
 - **SQLAlchemy 2.0** -- Async ORM with PostgreSQL (asyncpg) and SQLite (aiosqlite for tests)
+- **asyncpg** -- Direct async PostgreSQL driver (used by ingestion pipeline)
 - **Pydantic v2** -- Request/response validation
+- **Qdrant** -- Vector database for semantic search
+- **Sentence Transformers** -- Embedding generation
 - **Alembic** -- Database migrations
 - **Poetry** -- Dependency management
-- **Docker Compose** -- Container orchestration (app + PostgreSQL + pgAdmin)
+- **Docker Compose** -- Container orchestration (app + PostgreSQL + pgAdmin + Qdrant)
 - **pytest** + **pytest-asyncio** -- Testing framework
 - **Black** + **isort** + **Ruff** -- Code formatting and linting
-
-## Developer Profile Ingestion & Search
-
-Octopod includes a developer profiling system that pulls data from **GitHub**, **LinkedIn** (via Proxycurl), and **HuggingFace**, merges it into a cohesive profile, computes ranking scores, and enables semantic search via **Qdrant** vector DB.
-
-### Setup
-
-**1. Start infrastructure:**
-
-```bash
-docker compose up db qdrant -d
-```
-
-This adds a Qdrant vector database (http://localhost:6333/dashboard) alongside PostgreSQL.
-
-**2. Configure API keys** in `.env`:
-
-```env
-# Required for GitHub (60 req/hr without, 5000/hr with)
-GITHUB_TOKEN=ghp_your_personal_access_token
-
-# Required for LinkedIn profiles (paid API - https://nubela.co/proxycurl)
-PROXYCURL_API_KEY=your_key_here
-
-# Optional for HuggingFace (public API works without)
-HUGGINGFACE_TOKEN=hf_your_token_here
-
-# Qdrant (defaults work with docker compose)
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
-```
-
-> **Minimum to start:** Just `GITHUB_TOKEN`. Create a free personal access token at https://github.com/settings/tokens (no special scopes needed — public data only).
-
-**3. Install dependencies and start:**
-
-```bash
-poetry install
-poetry run alembic upgrade head
-make dev
-```
-
-### Usage Flow
-
-```bash
-# 1. Create a developer profile
-curl -X POST http://localhost:8000/api/v1/developer-profile \
-  -H "Content-Type: application/json" \
-  -d '{"github_username": "torvalds", "auto_ingest": true}'
-
-# 2. Check ingestion status
-curl http://localhost:8000/api/v1/developer-profile/{id}/status
-
-# 3. Merge platform data into a cohesive profile
-curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/merge
-
-# 4. Get the merged profile
-curl http://localhost:8000/api/v1/developer-profile/{id}/cohesive
-
-# 5. Get ranking scores
-curl http://localhost:8000/api/v1/developer-profile/{id}/ranking
-
-# 6. Semantic search
-curl -X POST http://localhost:8000/api/v1/developer-profile/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "machine learning engineer with Python", "limit": 10}'
-```
-
-### Enriching profiles over time
-
-You can add platform identifiers later and re-ingest — data is merged, not replaced:
-
-```bash
-# Add LinkedIn to an existing profile
-curl -X PATCH http://localhost:8000/api/v1/developer-profile/{id} \
-  -H "Content-Type: application/json" \
-  -d '{"linkedin_url": "https://linkedin.com/in/someone"}'
-
-# Re-ingest (fetches all configured platforms)
-curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/ingest
-
-# Re-merge (combines all sources with priority rules)
-curl -X POST http://localhost:8000/api/v1/developer-profile/{id}/merge
-```
-
-### Developer Profile Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/developer-profile` | Create profile with platform identifiers |
-| GET | `/developer-profile` | List profiles (paginated) |
-| GET | `/developer-profile/{id}` | Get profile by ID |
-| PATCH | `/developer-profile/{id}` | Update platform identifiers |
-| POST | `/developer-profile/{id}/ingest` | Trigger ingestion (202) |
-| GET | `/developer-profile/{id}/status` | Check ingestion status |
-| GET | `/developer-profile/{id}/cohesive` | Get merged profile |
-| POST | `/developer-profile/{id}/merge` | Force re-merge |
-| GET | `/developer-profile/{id}/ranking` | Get ranking scores |
-| POST | `/developer-profile/rank` | Rank profiles with custom weights |
-| POST | `/developer-profile/search` | Semantic search |
-
-### Merge Priority Rules
-
-When multiple platforms provide the same field, the winner is determined by:
-
-| Field | Priority |
-|-------|----------|
-| display_name, bio, headline | LinkedIn > GitHub > HuggingFace |
-| avatar_url | GitHub > LinkedIn > HuggingFace |
-| company | LinkedIn > GitHub |
-| skills | Union of all sources |
-| languages | GitHub (from repo stats) |
-| job_history | LinkedIn (authoritative) |
-
-### Ranking Scores
-
-8 component scores (each 0.0–1.0) combined into a weighted composite:
-
-| Component | Weight | Key Inputs |
-|-----------|--------|------------|
-| github_activity | 0.20 | contributions, repos |
-| technical_influence | 0.15 | stars, followers, downloads |
-| hiring_fit | 0.15 | skills, title, company |
-| experience | 0.15 | years of experience |
-| skills_breadth | 0.10 | unique skills + languages |
-| recency | 0.10 | days since last activity |
-| oss_contribution | 0.10 | non-fork repos, topics |
-| hf_impact | 0.05 | models, datasets, downloads |
-
-Weights are customizable via the `/rank` endpoint.
 
 ## API Documentation
 
