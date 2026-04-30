@@ -1,42 +1,42 @@
 [
   {
-    "ParameterKey": "GitHubTokenSecretName",
-    "ParameterValue": "CONTEXT0-BACKEND-GITHUB-TOKEN"
-  },
-  {
     "ParameterKey": "PipelineName",
-    "ParameterValue": "ctx0ai-dev-python-cicd-pipeline"
+    "ParameterValue": "octopodai-dev-python-cicd-pipeline"
   },
   {
     "ParameterKey": "GitHubOrganization",
-    "ParameterValue": "ContextZeroAI"
+    "ParameterValue": "CoderCouple"
   },
   {
     "ParameterKey": "GitHubRepo",
-    "ParameterValue": "context0-python-backend"
+    "ParameterValue": "octopod-backend"
   },
   {
     "ParameterKey": "CodeBuildProjectName",
-    "ParameterValue": "ctx0-api-dev-build"
+    "ParameterValue": "octopod-backend-api-dev-build"
   },
   {
     "ParameterKey": "ClusterStackName",
-    "ParameterValue": "ctx0ai-dev-ecs-cluster-stack"
+    "ParameterValue": "octopodai-dev-ecs-cluster"
   },
   {
     "ParameterKey": "ECSServiceName",
-    "ParameterValue": "ctx0ai-dev-python-service"
+    "ParameterValue": "octopodai-dev-python-service"
   },
   {
     "ParameterKey": "SNSTopicName",
-    "ParameterValue": "ctx0ai-dev-python-cicd-pipeline"
+    "ParameterValue": "octopodai-dev-python-cicd-pipeline"
+  },
+  {
+    "ParameterKey": "GitHubTokenSecretName",
+    "ParameterValue": "OCTOPOD-BACKEND-GITHUB-TOKEN"
   },
   {
     "ParameterKey": "UseCodeStarConnection",
-    "ParameterValue": "false"
+    "ParameterValue": "true"
   },
   {
     "ParameterKey": "CodeStarConnectionArn",
-    "ParameterValue": ""
+    "ParameterValue": "arn:aws:codeconnections:us-west-2:349738643995:connection/6fa66152-d2df-4f3c-aa34-c7891c95cc5a"
   }
 ]

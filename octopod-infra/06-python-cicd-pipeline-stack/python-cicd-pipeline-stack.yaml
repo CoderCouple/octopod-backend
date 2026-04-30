@@ -4,43 +4,43 @@ Description: "CloudFormation template for CodePipeline, IAM Role, and CodeStar N
 Parameters:
   PipelineName:
     Type: String
-    Default: "ctx0ai-dev-python-cicd-pipeline"
+    Default: "octopodai-dev-python-cicd-pipeline"
     Description: "Name of the CodePipeline."
 
   GitHubOrganization:
     Type: String
-    Default: "ContextZeroAI"
+    Default: "CoderCouple"
     Description: "Org of the GitHub repository."
 
   GitHubRepo:
     Type: String
-    Default: "context0-python-backend"
+    Default: "octopod-backend"
     Description: "Name of the GitHub repository."
 
   CodeBuildProjectName:
     Type: String
-    Default: "context0-python-backend"
+    Default: "octopod-backend-api-dev-build"
     Description: "Name of the CodeBuild project."
 
   ClusterStackName:
     Type: String
     AllowedPattern: "\\S+"
-    Default: "ctx0ai-dev-ecs-cluster-stack"
+    Default: "octopodai-dev-ecs-cluster"
     Description: "Name of the cluster stack."
 
   ECSServiceName:
     Type: String
-    Default: "ctx0ai-dev-python-service"
+    Default: "octopodai-dev-python-service"
     Description: "Name of the ECS service."
 
   SNSTopicName:
     Type: String
-    Default: "ctx0ai-dev-python-cicd-pipeline"
+    Default: "octopodai-dev-python-cicd-pipeline"
     Description: "Name of SNS topic for CodeStar notifications."
 
   GitHubTokenSecretName:
     Type: String
-    Default: "CONTEXT0-BACKEND-GITHUB-TOKEN"
+    Default: "OCTOPOD-BACKEND-GITHUB-TOKEN"
     Description: "The name of the secret in AWS Secrets Manager that contains the GitHub OAuth token."
 
   UseCodeStarConnection:
@@ -51,8 +51,8 @@ Parameters:
 
   CodeStarConnectionArn:
     Type: String
-    Default: "arn:aws:codestar-connections:us-west-2:349738643995:connection/1de47e08-1ee9-4518-a202-cf49cd4e835e"
-    Description: "ARN of the CodeStar Connections connection for GitHub (required if UseCodeStarConnection is true)"
+    Default: "arn:aws:codeconnections:us-west-2:349738643995:connection/6fa66152-d2df-4f3c-aa34-c7891c95cc5a"
+    Description: "ARN of the CodeStar/CodeConnections connection for GitHub (required if UseCodeStarConnection is true)"
 
 
 Conditions:
@@ -106,6 +106,7 @@ Resources:
               - "s3:*"
               - "iam:PassRole"
               - "codestar-connections:UseConnection"
+              - "codeconnections:UseConnection"
               - "ecs:DescribeServices"
               - "ecs:DescribeTaskDefinition"
               - "ecs:DescribeTasks"
