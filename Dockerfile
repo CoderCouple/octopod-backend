@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 ENV POETRY_VERSION=1.8.0 \
     POETRY_VIRTUALENVS_CREATE=false \
