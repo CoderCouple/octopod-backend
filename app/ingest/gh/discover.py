@@ -93,6 +93,7 @@ async def _collect_users_from_band(
     languages: list[str] | None = None,
     topics: list[str] | None = None,
     min_repos: int | None = None,
+    org: str | None = None,
 ) -> dict[str, UserCandidate]:
     q = f"followers:>{lo}" if hi is None else f"followers:{lo}..{hi}"
     for lang in (languages or []):
@@ -101,6 +102,8 @@ async def _collect_users_from_band(
         q += f" topic:{topic}"
     if min_repos:
         q += f" repos:>{min_repos}"
+    if org:
+        q += f" org:{org}"
     found: dict[str, UserCandidate] = {}
     page = 1
     per_page = 100
@@ -160,6 +163,7 @@ async def _collect_top_repo_owners(
     *,
     languages: list[str] | None = None,
     topics: list[str] | None = None,
+    org: str | None = None,
 ) -> dict[str, int]:
     owners: dict[str, int] = {}
     star_bands: list[tuple[int, int | None]] = [
@@ -181,6 +185,8 @@ async def _collect_top_repo_owners(
             q += f" language:{lang}"
         for topic in (topics or []):
             q += f" topic:{topic}"
+        if org:
+            q += f" org:{org}"
         page = 1
         while collected < n_repos:
             try:
@@ -244,6 +250,7 @@ async def discover_top_users(
     topics: list[str] | None = None,
     min_repos: int | None = None,
     min_followers: int | None = None,
+    org: str | None = None,
 ) -> list[UserCandidate]:
     """Return the top-N users ranked by weighted followers+stars score."""
     from .token_pool import TokenPool
@@ -258,7 +265,8 @@ async def discover_top_users(
             bands = [(lo, hi) for lo, hi in bands if lo >= min_followers]
         for lo, hi in bands:
             band_users = await _collect_users_from_band(
-                client, lo, hi, languages=languages, topics=topics, min_repos=min_repos
+                client, lo, hi,
+                languages=languages, topics=topics, min_repos=min_repos, org=org,
             )
             log.info(
                 "  band followers %s-%s: +%d users (total unique: %d)",
@@ -274,7 +282,7 @@ async def discover_top_users(
 
         log.info("Phase 3/3: collecting top repo owners for star component")
         owner_stars = await _collect_top_repo_owners(
-            client, repo_pool_size, languages=languages, topics=topics
+            client, repo_pool_size, languages=languages, topics=topics, org=org,
         )
         for owner, stars in owner_stars.items():
             if owner not in all_users:

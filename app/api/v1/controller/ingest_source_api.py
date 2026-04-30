@@ -9,7 +9,13 @@ import asyncpg
 from fastapi import APIRouter, BackgroundTasks
 
 from app.api.tags import Tags
-from app.api.v1.request.ingest_request import DiscoverRequest, IngestRequest, LNIngestRequest
+from app.api.v1.request.ingest_request import (
+    DiscoverRequest,
+    GHDiscoverRequest,
+    HFDiscoverRequest,
+    IngestRequest,
+    LNIngestRequest,
+)
 from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.ingest_response import JobStartedResponse
 from app.common.enum.ingest import IngestJobType, IngestTrigger
@@ -25,7 +31,7 @@ log = logging.getLogger(__name__)
 
 @router.post("/gh/discover", response_model=BaseResponse[JobStartedResponse])
 async def gh_discover(
-    req: DiscoverRequest, background_tasks: BackgroundTasks
+    req: GHDiscoverRequest, background_tasks: BackgroundTasks
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -35,7 +41,11 @@ async def gh_discover(
         job_id = await tracker.create_job(
             job_type=IngestJobType.GH_DISCOVER,
             trigger=IngestTrigger.API,
-            input_params={"top": req.top, "alpha": req.alpha},
+            input_params={
+                "top": req.top, "alpha": req.alpha, "org": req.org,
+                "languages": req.languages, "topics": req.topics,
+                "min_followers": req.min_followers, "min_repos": req.min_repos,
+            },
         )
     finally:
         await pool.close()
@@ -55,7 +65,11 @@ async def gh_discover(
                 tracker._job_id = job_id
                 await tracker.mark_running()
 
-                ranked = await discover_top_users(config, n=req.top, alpha=req.alpha)
+                ranked = await discover_top_users(
+                    config, n=req.top, alpha=req.alpha,
+                    org=req.org, languages=req.languages, topics=req.topics,
+                    min_followers=req.min_followers, min_repos=req.min_repos,
+                )
                 await tracker.mark_completed({
                     "processed": len(ranked),
                     "succeeded": len(ranked),
@@ -150,7 +164,7 @@ async def gh_run(
 
 @router.post("/hf/discover", response_model=BaseResponse[JobStartedResponse])
 async def hf_discover(
-    req: DiscoverRequest, background_tasks: BackgroundTasks
+    req: HFDiscoverRequest, background_tasks: BackgroundTasks
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -160,7 +174,10 @@ async def hf_discover(
         job_id = await tracker.create_job(
             job_type=IngestJobType.HF_DISCOVER,
             trigger=IngestTrigger.API,
-            input_params={"top": req.top, "alpha": req.alpha},
+            input_params={
+                "top": req.top, "alpha": req.alpha,
+                "pipeline_tag": req.pipeline_tag, "library": req.library,
+            },
         )
     finally:
         await pool.close()
@@ -180,7 +197,10 @@ async def hf_discover(
                 tracker._job_id = job_id
                 await tracker.mark_running()
 
-                ranked = await discover_top_authors(config, n=req.top, alpha=req.alpha)
+                ranked = await discover_top_authors(
+                    config, n=req.top, alpha=req.alpha,
+                    pipeline_tag=req.pipeline_tag, library=req.library,
+                )
                 await tracker.mark_completed({
                     "processed": len(ranked),
                     "succeeded": len(ranked),

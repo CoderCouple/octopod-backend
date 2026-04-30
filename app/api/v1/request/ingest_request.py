@@ -10,6 +10,23 @@ class DiscoverRequest(BaseModel):
     alpha: float = Field(default=0.5, ge=0.0, le=1.0)
 
 
+class GHDiscoverRequest(BaseModel):
+    top: int = Field(default=5000, ge=1, le=50000)
+    alpha: float = Field(default=0.5, ge=0.0, le=1.0)
+    org: str | None = Field(default=None, description="GitHub org/company to scope search (e.g. 'google', 'microsoft')")
+    languages: list[str] | None = Field(default=None, description="Filter by programming language (e.g. ['python', 'rust'])")
+    topics: list[str] | None = Field(default=None, description="Filter by GitHub repo topic (e.g. ['machine-learning'])")
+    min_followers: int | None = Field(default=None, ge=1, description="Minimum follower count")
+    min_repos: int | None = Field(default=None, ge=1, description="Minimum number of public repos")
+
+
+class HFDiscoverRequest(BaseModel):
+    top: int = Field(default=5000, ge=1, le=50000)
+    alpha: float = Field(default=0.5, ge=0.0, le=1.0)
+    pipeline_tag: str | None = Field(default=None, description="Filter by HF pipeline tag (e.g. 'text-generation', 'image-classification')")
+    library: str | None = Field(default=None, description="Filter by ML library (e.g. 'transformers', 'diffusers')")
+
+
 class IngestRequest(BaseModel):
     logins: list[str] = Field(default_factory=list, min_length=1)
     concurrency: int | None = Field(default=None, ge=1, le=64)
