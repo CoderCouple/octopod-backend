@@ -16,6 +16,23 @@ class JobStartedResponse(BaseModel):
 # ---- Source ----
 
 
+class GHFilteredUser(BaseModel):
+    login: str
+    followers: int
+    public_repos: int
+    company: str | None = None
+    location: str | None = None
+    total_stars: int
+    languages: list[str]
+    commit_count: int
+
+
+class GHFilterResponse(BaseModel):
+    total: int
+    logins: list[str]
+    users: list[GHFilteredUser]
+
+
 class RetryStartedResponse(BaseModel):
     gh_job_id: str
     hf_job_id: str

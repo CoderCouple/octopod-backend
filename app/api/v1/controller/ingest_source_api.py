@@ -12,12 +12,13 @@ from app.api.tags import Tags
 from app.api.v1.request.ingest_request import (
     DiscoverRequest,
     GHDiscoverRequest,
+    GHFilterRequest,
     HFDiscoverRequest,
     IngestRequest,
     LNIngestRequest,
 )
 from app.api.v1.response.base_response import BaseResponse, success_response
-from app.api.v1.response.ingest_response import JobStartedResponse
+from app.api.v1.response.ingest_response import GHFilterResponse, JobStartedResponse
 from app.common.enum.ingest import IngestJobType, IngestTrigger
 from app.settings import settings
 
@@ -157,6 +158,116 @@ async def gh_run(
 
     background_tasks.add_task(lambda: asyncio.run(_run()))
     return success_response({"job_id": job_id, "status": "started"})
+
+
+# ---- GitHub post-ingest filter (synchronous — queries already-ingested data) ----
+
+
+@router.post("/gh/filter", response_model=BaseResponse[GHFilterResponse])
+async def gh_filter(req: GHFilterRequest) -> BaseResponse:
+    """Query already-ingested GitHub users by activity and profile criteria.
+
+    Returns logins + stats for users matching all filters. The logins list
+    can be fed directly into POST /gh/run to trigger full profile ingestion.
+    """
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=3)
+    try:
+        conditions: list[str] = []
+        params: list = [req.days, req.min_commits]  # $1=days, $2=min_commits (used in CTEs)
+        idx = 3
+
+        if req.min_followers is not None:
+            conditions.append(f"u.followers >= ${idx}")
+            params.append(req.min_followers)
+            idx += 1
+
+        if req.min_repos is not None:
+            conditions.append(f"u.public_repos >= ${idx}")
+            params.append(req.min_repos)
+            idx += 1
+
+        if req.min_stars is not None:
+            conditions.append(f"COALESCE(ra.total_stars, 0) >= ${idx}")
+            params.append(req.min_stars)
+            idx += 1
+
+        if req.company:
+            conditions.append(f"u.company ILIKE ${idx}")
+            params.append(f"%{req.company}%")
+            idx += 1
+
+        if req.location:
+            conditions.append(f"u.location ILIKE ${idx}")
+            params.append(f"%{req.location}%")
+            idx += 1
+
+        if req.languages:
+            conditions.append(f"ra.languages && ${idx}::text[]")
+            params.append(req.languages)
+            idx += 1
+
+        params.append(req.limit)
+        limit_idx = idx
+
+        where_clause = ("AND " + " AND ".join(conditions)) if conditions else ""
+
+        sql = f"""
+            WITH recent_commits AS (
+                SELECT author_login, COUNT(*) AS commit_count
+                FROM gh_commits
+                WHERE committed_at >= NOW() - ($1 * INTERVAL '1 day')
+                GROUP BY author_login
+                HAVING COUNT(*) >= $2
+            ),
+            repo_agg AS (
+                SELECT
+                    r.owner_id,
+                    COALESCE(SUM(r.stars), 0) AS total_stars,
+                    ARRAY_AGG(DISTINCT r.primary_language)
+                        FILTER (WHERE r.primary_language IS NOT NULL) AS languages
+                FROM gh_repositories r
+                GROUP BY r.owner_id
+            )
+            SELECT
+                u.login,
+                u.followers,
+                u.public_repos,
+                u.company,
+                u.location,
+                COALESCE(ra.total_stars, 0) AS total_stars,
+                COALESCE(ra.languages, ARRAY[]::text[]) AS languages,
+                rc.commit_count
+            FROM gh_users u
+            JOIN recent_commits rc ON rc.author_login = u.login
+            LEFT JOIN repo_agg ra ON ra.owner_id = u.id
+            {where_clause}
+            ORDER BY rc.commit_count DESC
+            LIMIT ${limit_idx}
+        """
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+
+        users = [
+            {
+                "login": r["login"],
+                "followers": r["followers"],
+                "public_repos": r["public_repos"],
+                "company": r["company"],
+                "location": r["location"],
+                "total_stars": r["total_stars"],
+                "languages": list(r["languages"] or []),
+                "commit_count": r["commit_count"],
+            }
+            for r in rows
+        ]
+        return success_response({
+            "total": len(users),
+            "logins": [u["login"] for u in users],
+            "users": users,
+        })
+    finally:
+        await pool.close()
 
 
 # ---- HuggingFace endpoints ----

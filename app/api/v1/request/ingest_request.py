@@ -32,6 +32,18 @@ class IngestRequest(BaseModel):
     concurrency: int | None = Field(default=None, ge=1, le=64)
 
 
+class GHFilterRequest(BaseModel):
+    min_commits: int = Field(default=1, ge=1, description="Minimum commits in the lookback window")
+    days: int = Field(default=90, ge=1, le=365, description="Lookback window in days")
+    min_followers: int | None = Field(default=None, ge=0, description="Minimum follower count")
+    min_stars: int | None = Field(default=None, ge=0, description="Minimum total stars across all repos")
+    min_repos: int | None = Field(default=None, ge=1, description="Minimum number of public repos")
+    languages: list[str] | None = Field(default=None, description="Must have at least one repo in these languages")
+    company: str | None = Field(default=None, description="Company substring match (case-insensitive)")
+    location: str | None = Field(default=None, description="Location substring match (case-insensitive)")
+    limit: int = Field(default=500, ge=1, le=5000, description="Max results to return")
+
+
 class LNIngestRequest(BaseModel):
     max_profiles: int = Field(default=5000, ge=1, le=50000)
     concurrency: int | None = Field(default=None, ge=1, le=16)
