@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: PostgreSQL RDS with Secrets Manager managed credentials
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  NetworkStackName:
+    Type: String
+    Description: Name of network stack
+    Default: octopodai-dev-network-stack
+    AllowedPattern: \S+
+  DBName:
+    Default: octopod_db
+    Description: Database Name
+    Type: String
+  DBAllocatedStorage:
+    Default: 20
+    Description: The size of the database (GiB)
+    Type: Number
+    MinValue: 5
+    MaxValue: 1024
+    ConstraintDescription: must be between 5 and 1024 GiB.
+  DBMasterUsername:
+    Description: Master username for database
+    Type: String
+    Default: dbadmin
+
+Mappings:
+  EnvironmentInstanceTypes:
+    dev:
+      DBInstanceType: db.t3.micro
+    prod:
+      DBInstanceType: db.m5.large
+
+Conditions:
+  IsProdEnvironment: !Equals [!Ref Environment, prod]
+
+Resources:
+
+  RDSDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: !FindInMap
+        - EnvironmentInstanceTypes
+        - !Ref Environment
+        - DBInstanceType
+      Engine: 'postgres'
+      EngineVersion: '16.8'
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBMasterUsername
+      ManageMasterUserPassword: true  # RDS manages password via Secrets Manager (zero cost)
+      DBSubnetGroupName: !ImportValue
+        'Fn::Sub': '${NetworkStackName}-DbSubnetGroup'
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-DBSecurityGroup'
+      MultiAZ: !If [IsProdEnvironment, true, false]
+      StorageType: 'gp3'
+      StorageEncrypted: true
+      BackupRetentionPeriod: !If [IsProdEnvironment, 30, 7]
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "sun:04:00-sun:05:00"
+      EnableIAMDatabaseAuthentication: true
+      EnablePerformanceInsights: false
+      DeletionProtection: !If [IsProdEnvironment, true, false]
+      Port: 5432
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-RDSDBInstance
+
+Outputs:
+  DBEndpoint:
+    Description: 'The connection endpoint for the database'
+    Value: !GetAtt RDSDBInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${AWS::StackName}-DBEndpoint'
+
+  DBPort:
+    Description: 'The port of the database'
+    Value: !GetAtt RDSDBInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${AWS::StackName}-DBPort'
+
+  DBName:
+    Description: 'The name of the database'
+    Value: !Ref DBName
+    Export:
+      Name: !Sub '${AWS::StackName}-DBName'
+
+  DBSecretArn:
+    Description: 'ARN of the RDS-managed Secrets Manager secret for master credentials'
+    Value: !GetAtt RDSDBInstance.MasterUserSecret.SecretArn
+    Export:
+      Name: !Sub '${AWS::StackName}-DBSecretArn'
+
+  DBConnectionString:
+    Description: 'PostgreSQL connection string (without password)'
+    Value: !Sub 'postgresql://${DBMasterUsername}@${RDSDBInstance.Endpoint.Address}:${RDSDBInstance.Endpoint.Port}/${DBName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-DBConnectionString'

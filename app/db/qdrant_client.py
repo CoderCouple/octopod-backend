@@ -13,11 +13,22 @@ VECTOR_SIZE = settings.embedding_dimension
 def get_qdrant_client():
     from qdrant_client import QdrantClient
 
-    client = QdrantClient(
-        host=settings.qdrant_host,
-        port=settings.qdrant_port,
-        timeout=30,
-    )
+    if settings.qdrant_url:
+        # Qdrant Cloud mode
+        client = QdrantClient(
+            url=settings.qdrant_url,
+            api_key=settings.qdrant_api_key,
+            timeout=30,
+        )
+        logger.info("Connected to Qdrant Cloud: %s", settings.qdrant_url)
+    else:
+        # Local mode
+        client = QdrantClient(
+            host=settings.qdrant_host,
+            port=settings.qdrant_port,
+            timeout=30,
+        )
+        logger.info("Connected to local Qdrant: %s:%s", settings.qdrant_host, settings.qdrant_port)
     return client
 
 
@@ -25,7 +36,6 @@ async def ensure_collection() -> None:
     from qdrant_client.models import (
         Distance,
         HnswConfigDiff,
-        PayloadSchemaType,
         ScalarQuantization,
         ScalarQuantizationConfig,
         ScalarType,

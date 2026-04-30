@@ -1,5 +1,12 @@
 
+import platform
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _detect_env_file() -> str:
+    """Load .env.local on macOS (dev laptop), .env.dev on Linux (AWS ECS)."""
+    return ".env.local" if platform.system() == "Darwin" else ".env.dev"
 
 
 class Settings(BaseSettings):
@@ -34,6 +41,8 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_grpc_port: int = 6334
+    qdrant_url: str | None = None  # Qdrant Cloud URL (overrides host/port when set)
+    qdrant_api_key: str | None = None  # Qdrant Cloud API key
 
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -92,6 +101,8 @@ class Settings(BaseSettings):
     opensearch_use_ssl: bool = False
     opensearch_enabled: bool = False
     opensearch_index: str = "octopod_profiles"
+    opensearch_username: str | None = None
+    opensearch_password: str | None = None
 
     # Security
     secret_key: str = "your-secret-key-here-change-in-production"
@@ -126,7 +137,7 @@ class Settings(BaseSettings):
     token_encryption_key: str = ""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_detect_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
@@ -150,7 +161,7 @@ class Settings(BaseSettings):
     @property
     def sync_database_url(self) -> str:
         if self.database_url:
-            return self.database_url
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            return self.database_url.replace("postgresql://", "postgresql+psycopg://")
+        return f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
 settings = Settings()

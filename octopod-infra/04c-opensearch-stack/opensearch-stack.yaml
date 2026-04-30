@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS OpenSearch Service domain deployed in VPC
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  NetworkStackName:
+    Type: String
+    Description: Name of network stack
+    Default: octopodai-dev-network-stack
+    AllowedPattern: \S+
+
+Mappings:
+  EnvironmentConfig:
+    dev:
+      InstanceType: t3.small.search
+      InstanceCount: 1
+      VolumeSize: 10
+      DedicatedMaster: false
+      ZoneAwareness: false
+    prod:
+      InstanceType: m6g.large.search
+      InstanceCount: 2
+      VolumeSize: 50
+      DedicatedMaster: false
+      ZoneAwareness: true
+
+Conditions:
+  IsProdEnvironment: !Equals [!Ref Environment, prod]
+
+Resources:
+
+  # Service-linked role required for OpenSearch VPC access
+  OpenSearchServiceLinkedRole:
+    Type: AWS::IAM::ServiceLinkedRole
+    Properties:
+      AWSServiceName: es.amazonaws.com
+      Description: Role for OpenSearch Service to access VPC resources
+
+  # Master user credentials stored in Secrets Manager
+  OpenSearchMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-opensearch-master'
+      Description: OpenSearch master user credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: password
+        PasswordLength: 24
+        ExcludeCharacters: '"@/\\'
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-opensearch-master-secret
+
+  # Security group for OpenSearch — allows HTTPS from app layer
+  OpenSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTPS access to OpenSearch from app subnet
+      VpcId: !ImportValue
+        'Fn::Sub': '${NetworkStackName}-VPCID'
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !ImportValue
+            'Fn::Sub': '${NetworkStackName}-AppSecurityGroup'
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-OpenSearchSecurityGroup
+
+  # OpenSearch domain
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    DependsOn: OpenSearchServiceLinkedRole
+    Properties:
+      DomainName: !Sub '${ProjectName}-${Environment}'
+      EngineVersion: 'OpenSearch_2.13'
+      ClusterConfig:
+        InstanceType: !FindInMap [EnvironmentConfig, !Ref Environment, InstanceType]
+        InstanceCount: !FindInMap [EnvironmentConfig, !Ref Environment, InstanceCount]
+        DedicatedMasterEnabled: !FindInMap [EnvironmentConfig, !Ref Environment, DedicatedMaster]
+        ZoneAwarenessEnabled: !FindInMap [EnvironmentConfig, !Ref Environment, ZoneAwareness]
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: !FindInMap [EnvironmentConfig, !Ref Environment, VolumeSize]
+      VPCOptions:
+        SubnetIds:
+          - !If
+            - IsProdEnvironment
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSubnetA'
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSubnetA'
+        SecurityGroupIds:
+          - !Ref OpenSearchSecurityGroup
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+        TLSSecurityPolicy: Policy-Min-TLS-1-2-PFS-2023-10
+      AdvancedSecurityOptions:
+        Enabled: true
+        InternalUserDatabaseEnabled: true
+        MasterUserOptions:
+          MasterUserName: !Sub '{{resolve:secretsmanager:${OpenSearchMasterSecret}:SecretString:username}}'
+          MasterUserPassword: !Sub '{{resolve:secretsmanager:${OpenSearchMasterSecret}:SecretString:password}}'
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: 'es:*'
+            Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${ProjectName}-${Environment}/*'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-OpenSearchDomain
+
+Outputs:
+  OpenSearchDomainEndpoint:
+    Description: OpenSearch domain endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainEndpoint'
+
+  OpenSearchDomainArn:
+    Description: OpenSearch domain ARN
+    Value: !GetAtt OpenSearchDomain.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-DomainArn'
+
+  OpenSearchSecurityGroupId:
+    Description: Security group ID for OpenSearch
+    Value: !Ref OpenSearchSecurityGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-SecurityGroupId'
+
+  OpenSearchMasterSecretArn:
+    Description: ARN of the Secrets Manager secret for OpenSearch master credentials
+    Value: !Ref OpenSearchMasterSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-MasterSecretArn'

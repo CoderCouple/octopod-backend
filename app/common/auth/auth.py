@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import Header
 from pydantic import BaseModel
@@ -16,8 +15,8 @@ class UserContext(BaseModel):
     """
 
     actor_id: str
-    organization_id: Optional[str] = None
-    role: Optional[str] = None
+    organization_id: str | None = None
+    role: str | None = None
 
 
 async def get_actor_id(x_actor_id: str | None = Header(default=None)) -> str | None:

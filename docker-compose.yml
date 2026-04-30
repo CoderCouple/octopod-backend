@@ -11,7 +11,7 @@ services:
     volumes:
       - .:/app
     env_file:
-      - .env
+      - .env.local
     depends_on:
       - db
     environment:
@@ -32,9 +32,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./sql/gh_schema.sql:/docker-entrypoint-initdb.d/02-gh-schema.sql:ro
-      - ./sql/hf_schema.sql:/docker-entrypoint-initdb.d/03-hf-schema.sql:ro
-      - ./sql/ingest_job_schema.sql:/docker-entrypoint-initdb.d/04-ingest-job-schema.sql:ro
     restart: unless-stopped
 
   # pgAdmin for database management

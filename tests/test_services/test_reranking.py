@@ -1,6 +1,6 @@
 import pytest
 
-from app.service.reranking import Reranker, RerankCandidate, RerankResult
+from app.service.reranking import RerankCandidate, Reranker, RerankResult
 
 
 class MockReranker(Reranker):

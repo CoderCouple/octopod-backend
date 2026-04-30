@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: DNS records to point root domain and www to web ALB
+
+Parameters:
+  PublicHostedZoneName:
+    Description: Name of publicly hosted zone for the project
+    Type: String
+    Default: context0.ai.
+  PublicHostedZoneId:
+    Description: Route53 Hosted Zone ID for the domain
+    Type: String
+    Default: Z03244512LEQXUVHET7FJ
+  NextJSStackName:
+    Description: Name of the Next.js ECS stack to import ALB details
+    Type: String
+    Default: ctx0ai-dev-nextjs-ecs-stack
+
+Resources:
+  # Root domain (context0.ai) pointing to web ALB
+  RootDomainRecord:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      AliasTarget:
+        DNSName: 
+          Fn::ImportValue: !Sub "${NextJSStackName}-NextJSLoadBalancerDNSName"
+        EvaluateTargetHealth: false
+        HostedZoneId: 
+          Fn::ImportValue: !Sub "${NextJSStackName}-NextJSLoadBalancerCanonicalHostedZoneID"
+      Comment: Root domain pointing to Next.js web ALB
+      HostedZoneId: !Ref PublicHostedZoneId
+      Name: context0.ai.
+      Type: A
+
+  # WWW subdomain (www.context0.ai) pointing to web ALB
+  WWWDomainRecord:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      AliasTarget:
+        DNSName: 
+          Fn::ImportValue: !Sub "${NextJSStackName}-NextJSLoadBalancerDNSName"
+        EvaluateTargetHealth: false
+        HostedZoneId: 
+          Fn::ImportValue: !Sub "${NextJSStackName}-NextJSLoadBalancerCanonicalHostedZoneID"
+      Comment: WWW subdomain pointing to Next.js web ALB
+      HostedZoneId: !Ref PublicHostedZoneId
+      Name: www.context0.ai.
+      Type: A
+
+Outputs:
+  RootDomainURL:
+    Description: Root domain URL
+    Value: https://context0.ai
+    Export:
+      Name: !Sub "${AWS::StackName}-RootDomainURL"
+
+  WWWDomainURL:
+    Description: WWW domain URL
+    Value: https://www.context0.ai
+    Export:
+      Name: !Sub "${AWS::StackName}-WWWDomainURL"

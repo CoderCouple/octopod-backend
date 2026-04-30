@@ -47,7 +47,7 @@ class ReplyWorker:
                 factory = get_async_session_factory()
                 async with factory() as session:
                     try:
-                        tracking_svc = EmailTrackingService(session)
+                        _tracking_svc = EmailTrackingService(session)
                         # In a full implementation, this would:
                         # 1. Connect to IMAP for each mailbox
                         # 2. Fetch recent messages

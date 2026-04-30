@@ -66,10 +66,15 @@ def get_opensearch_client() -> Any:
 
     from opensearchpy import OpenSearch
 
+    http_auth = None
+    if settings.opensearch_username and settings.opensearch_password:
+        http_auth = (settings.opensearch_username, settings.opensearch_password)
+
     _client = OpenSearch(
         hosts=[{"host": settings.opensearch_host, "port": settings.opensearch_port}],
+        http_auth=http_auth,
         use_ssl=settings.opensearch_use_ssl,
-        verify_certs=False,
+        verify_certs=settings.opensearch_use_ssl,
         ssl_show_warn=False,
     )
     return _client

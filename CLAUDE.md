@@ -59,7 +59,6 @@ octopod-backend/
 ### Database
 - Uses SQLAlchemy 2.0 with async support
 - PostgreSQL for relational data (asyncpg driver)
-- MongoDB for document storage (motor driver)
 - Alembic for schema migrations
 
 ### API Structure

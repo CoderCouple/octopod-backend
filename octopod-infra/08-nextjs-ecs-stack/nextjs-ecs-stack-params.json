@@ -1,0 +1,62 @@
+[
+  {
+    "ParameterKey": "OrganizationName",
+    "ParameterValue": "ctx0ai"
+  },
+  {
+    "ParameterKey": "DomainName",
+    "ParameterValue": "context0.ai"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ctx0ai"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "ClusterMinSize",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "ClusterMaxSize",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "ClusterRollSize",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "NetworkStackName",
+    "ParameterValue": "ctx0ai-dev-network-stack"
+  },
+  {
+    "ParameterKey": "DockerRepositoryName",
+    "ParameterValue": "ctx0-web-dev-ecr-repo"
+  },
+  {
+    "ParameterKey": "SSHKeyName",
+    "ParameterValue": "demokey"
+  },
+  {
+    "ParameterKey": "ClusterStackName",
+    "ParameterValue": "ctx0ai-dev-ecs-cluster-stack"
+  },
+  {
+    "ParameterKey": "PublicHostedZoneName",
+    "ParameterValue": "context0.ai."
+  },
+  {
+    "ParameterKey": "PublicHostedZoneId",
+    "ParameterValue": "Z03244512LEQXUVHET7FJ"
+  },
+  {
+    "ParameterKey": "DomainNameForCertificate",
+    "ParameterValue": "context0.ai"
+  },
+  {
+    "ParameterKey": "ServiceDiscoveryName",
+    "ParameterValue": "web"
+  }
+]

@@ -6,7 +6,7 @@ to accept traffic.
 """
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, status
 
@@ -16,7 +16,7 @@ router = APIRouter(tags=[Tags.Health])
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-async def health_check() -> Dict[str, Any]:
+async def health_check() -> dict[str, Any]:
     """Liveness probe for the service.
 
     Returns a simple heartbeat indicating that the application process is
@@ -42,7 +42,7 @@ async def health_check() -> Dict[str, Any]:
 
 
 @router.get("/ready", status_code=status.HTTP_200_OK)
-async def readiness_check() -> Dict[str, Any]:
+async def readiness_check() -> dict[str, Any]:
     """Readiness probe for the service.
 
     Checks that all critical dependencies (database, cache) are reachable

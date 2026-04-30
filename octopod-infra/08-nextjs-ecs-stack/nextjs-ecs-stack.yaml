@@ -1,0 +1,543 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template for Next.js frontend ECS deployment
+
+Parameters:
+  OrganizationName:
+    Description: Organization Name to identify stack and infrastructure
+    Type: String
+  DomainName:
+    Description: Domain Name inside the Organization to identify stack and infrastructure
+    Type: String
+  ProjectName:
+    Description: Project Name inside the Domain to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  ClusterMinSize:
+    Default: '1'
+    Description: Min size for ECS Cluster
+    Type: String
+  ClusterMaxSize:
+    Default: '3'
+    Description: Max size for ECS Cluster
+    Type: String
+  ClusterRollSize:
+    Default: '1'
+    Description: Number of instances to roll at a time during an upgrade of cluster
+    Type: String
+  NetworkStackName:
+    AllowedPattern: \S+
+    Default: ctx0ai-dev-network-stack
+    Description: Name of network stack
+    Type: String
+  DockerRepositoryName:
+    Description: Docker repository to use for ECS Task Definition
+    Type: String
+    Default: ctx0-web-dev-ecr-repo
+  SSHKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: demokey
+  ClusterStackName:
+    AllowedPattern: \S+
+    Default: ctx0ai-dev-ecs-cluster-stack
+    Description: Name of cluster stack
+    Type: String
+  PublicHostedZoneName:
+    Description: Name of publicly hosted zone for the project
+    Type: String
+    Default: context0.ai.
+  PublicHostedZoneId:
+    Description: Route53 Hosted Zone ID for the domain
+    Type: String
+    Default: Z03244512LEQXUVHET7FJ
+  DomainNameForCertificate:
+    Description: Domain name for the wildcard certificate (without trailing dot)
+    Type: String
+    Default: context0.ai
+  ServiceDiscoveryName:
+    Description: Name for service discovery (e.g., web, app, portal)
+    Type: String
+    Default: web
+
+Mappings:
+  AccountMap:
+    us-east-1:
+      '349738643995': 349738643995.us-east-1
+    us-west-2:
+      '349738643995': 349738643995.us-west-2
+
+  R53Map:
+    '349738643995':
+      Name: ""
+
+  RegionMap:
+    349738643995.us-east-1:
+      az1: us-east-1a
+      az2: us-east-1b
+      az3: us-east-1c
+    349738643995.us-west-2:
+      az1: us-west-2a
+      az2: us-west-2b
+      az3: us-west-2c
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, "prod"]
+
+Resources:
+  NextJSECSInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: NextJSECSInstanceRole
+
+  NextJSECSInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "ecs-service"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecs:CreateCluster"
+                  - "ecs:DeregisterContainerInstance"
+                  - "ecs:DiscoverPollEndpoint"
+                  - "ecs:Poll"
+                  - "ecs:RegisterContainerInstance"
+                  - "ecs:StartTelemetrySession"
+                  - "ecs:Submit*"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+
+  NextJSECSExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+      Policies:
+        - PolicyName: "ecs-execution-role"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:BatchGetImage"
+                  - "ecr:GetAuthorizationToken"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+
+  ECSTaskPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: "ECSTaskPolicy"
+      Roles:
+        - !Ref ECSTaskRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "s3:ListAllMyBuckets"
+              - "s3:GetBucketLocation"
+              - "s3:ListBucket"
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:DeleteObject"
+            Resource:
+              - "arn:aws:s3:::*"
+              - "arn:aws:s3:::*/*"
+
+  ECSTaskRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-NextJS-ECSTaskRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+
+  NextJSECSTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Family: !Sub "${ProjectName}-${Environment}-NextJSTaskDefinition"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - EC2
+      Memory: 768   # 768MB for dev environment to fit t3a.micro
+      Cpu: 384      # 0.375 vCPU for dev environment
+      Volumes:
+        - Host:
+            SourcePath: "/var/run/docker.sock"
+          Name: "docker"
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ExecutionRoleArn: !GetAtt NextJSECSExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: nextjs-container
+          Image: !Join ['',[!Ref "AWS::AccountId", ".dkr.ecr.", !Ref "AWS::Region",  ".amazonaws.com/", !Ref DockerRepositoryName,":latest"]]
+          DockerLabels:
+            container: nextjs-container
+          PortMappings:
+            - ContainerPort: 3000
+              HostPort: 3000
+          Essential: true
+          Memory: 700   # Most of the 768MB allocation
+          Cpu: 384
+          Ulimits:
+            - HardLimit: 4000
+              Name: nofile
+              SoftLimit: 4000
+          Environment:
+            - Name: NODE_ENV
+              Value: !If [IsProd, "production", "development"]
+            - Name: NEXT_PUBLIC_API_URL
+              Value: !If [IsProd, "https://api.context0.ai", "https://api.context0.ai"]
+            - Name: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+              Value: "pk_test_bW9kZXJuLWhhcmUtNjkuY2xlcmsuYWNjb3VudHMuZGV2JA"
+            - Name: CLERK_SECRET_KEY
+              Value: "sk_test_vu47nWkVclhjdfiYm2cKBauqvKLQrgb7lQuQi1AsSu"
+            - Name: NEXT_PUBLIC_CLERK_SIGN_IN_URL
+              Value: "/sign-in"
+            - Name: NEXT_PUBLIC_CLERK_SIGN_UP_URL
+              Value: "/sign-up"
+            - Name: NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL
+              Value: "/dashboard"
+            - Name: NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL
+              Value: "/dashboard"
+            - Name: NEXT_PUBLIC_APP_URL
+              Value: !If [IsProd, "https://app.context0.ai", "https://web.context0.ai"]
+            - Name: PORT
+              Value: "3000"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref NextJSLogGroup
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: ecs
+              mode: non-blocking
+              max-buffer-size: 4m
+
+  NextJSLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/ecs/${ProjectName}-${Environment}-nextjs-log-group"
+      RetentionInDays: 14
+
+  # Service Discovery for internal VPC communication
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-nextjs.local"
+      Description: "Private namespace for Next.js service discovery"
+      Vpc: 
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPCID"
+
+  ServiceDiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: !Ref ServiceDiscoveryName
+      Description: !Sub "Service discovery for ${ProjectName} ${ServiceDiscoveryName} service"
+      DnsConfig:
+        DnsRecords:
+          - Type: A
+            TTL: 60
+        NamespaceId: !Ref ServiceDiscoveryNamespace
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  NextJSECSService:
+    Type: "AWS::ECS::Service"
+    DependsOn:
+      - NextJSECSTaskDefinition
+    Properties:
+      ServiceName: !Sub "${ProjectName}-${Environment}-nextjs-service"
+      Cluster: !ImportValue
+        'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+      TaskDefinition: !Ref NextJSECSTaskDefinition
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      DesiredCount: 1
+      LaunchType: EC2
+      LoadBalancers:
+        - ContainerName: nextjs-container
+          ContainerPort: 3000
+          TargetGroupArn: !Ref NextJSTargetGroup
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${NetworkStackName}-WebSecurityGroup"
+          Subnets:
+            - Fn::ImportValue: !Sub "${NetworkStackName}-WebSubnetA"
+            - Fn::ImportValue: !Sub "${NetworkStackName}-WebSubnetB"
+            - Fn::ImportValue: !Sub "${NetworkStackName}-WebSubnetC"
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ServiceDiscoveryService.Arn
+
+  NextJSECSServiceScalingTarget:
+    Type: "AWS::ApplicationAutoScaling::ScalableTarget"
+    Properties:
+      MaxCapacity: !Ref ClusterMaxSize
+      MinCapacity: !Ref ClusterMinSize
+      ResourceId:
+        !Join
+        - "/"
+        - - service
+          - !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+          - !GetAtt NextJSECSService.Name
+      RoleARN: !GetAtt NextJSECSInstanceRole.Arn
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  NextJSECSServiceScaleUpPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: !Sub "${ProjectName}-${Environment}-NextJSScaleUpPolicy"
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref NextJSECSServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalLowerBound: 0
+            ScalingAdjustment: 1
+
+  NextJSECSServiceScaleDownPolicy:
+    Type: "AWS::ApplicationAutoScaling::ScalingPolicy"
+    Properties:
+      PolicyName: !Sub "${ProjectName}-${Environment}-NextJSScaleDownPolicy"
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref NextJSECSServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: -1
+
+  NextJSECSServiceHighCPUAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmActions:
+        - Ref: NextJSECSServiceScaleUpPolicy
+      AlarmDescription: Alarm if CPU utilization is high
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: '1'
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Period: '60'
+      Statistic: Average
+      Threshold: '80'
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+        - Name: ServiceName
+          Value: !Ref NextJSECSService
+
+  NextJSECSServiceLowCPUAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmActions:
+        - Ref: NextJSECSServiceScaleDownPolicy
+      AlarmDescription: Alarm if CPU utilization is low
+      ComparisonOperator: LessThanThreshold
+      EvaluationPeriods: '15'
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Period: '120'
+      Statistic: Average
+      Threshold: '20'
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+        - Name: ServiceName
+          Value: !Ref NextJSECSService
+
+  NextJSTargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    DependsOn:
+      - NextJSLoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-nextjs-tg"
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      TargetType: ip
+      Port: 3000
+      Protocol: HTTP
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-VPCID"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-NextJSTargetGroup"
+
+  NextJSLoadBalancer:
+    Type: "AWS::ElasticLoadBalancingV2::LoadBalancer"
+    Properties:
+      Scheme: internet-facing
+      Name: !Sub "${ProjectName}-${Environment}-nextjs-alb"
+      SecurityGroups:
+        - Fn::ImportValue: !Sub "${NetworkStackName}-ExtApiELBSecurityGroup"
+      Subnets:
+        - Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnetA"
+        - Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnetB"
+        - Fn::ImportValue: !Sub "${NetworkStackName}-PublicSubnetC"
+      Tags:
+        - Key: Name
+          Value: !Sub "${ProjectName}-${Environment}-NextJSLoadBalancer"
+
+  NextJSHTTPLoadBalancerListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: 443
+            StatusCode: HTTP_301
+      LoadBalancerArn: !Ref NextJSLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  NextJSHTTPSLoadBalancerListener:
+    Type: "AWS::ElasticLoadBalancingV2::Listener"
+    Properties:
+      Certificates:
+        - CertificateArn: arn:aws:acm:us-west-2:349738643995:certificate/993135f9-6d76-40fb-8ba1-b4505bad8532  # Using existing wildcard certificate
+      DefaultActions:
+        - TargetGroupArn: !Ref NextJSTargetGroup
+          Type: forward
+      LoadBalancerArn: !Ref NextJSLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+
+  AppDNSRecord:
+    Type: "AWS::Route53::RecordSet"
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt NextJSLoadBalancer.DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt NextJSLoadBalancer.CanonicalHostedZoneID
+      Comment: DNS name for Next.js frontend
+      HostedZoneName: !Ref PublicHostedZoneName
+      Name: !Sub "${ServiceDiscoveryName}.${PublicHostedZoneName}"
+      Type: A
+      SetIdentifier: !Sub "${AWS::StackName}-${AWS::Region}"
+      Weight: 100
+
+Outputs:
+  NextJSECSExecutionRoleArn:
+    Description: ARN of the ECS Execution Role
+    Value: !GetAtt NextJSECSExecutionRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSECSExecutionRoleArn"
+
+  NextJSECSTaskDefinitionArn:
+    Description: ARN of the ECS Task Definition
+    Value: !Ref NextJSECSTaskDefinition
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSECSTaskDefinitionArn"
+
+  NextJSECSServiceName:
+    Description: Name of the ECS Service
+    Value: !Ref NextJSECSService
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSECSServiceName"
+
+  NextJSLoadBalancerName:
+    Description: Name of the Load Balancer
+    Value: !Ref NextJSLoadBalancer
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSLoadBalancerName"
+
+  NextJSHTTPSListenerArn:
+    Description: HTTPS Listener ARN
+    Value: !Ref NextJSHTTPSLoadBalancerListener
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSHTTPSListenerArn"
+
+  NextJSHTTPListenerArn:
+    Description: HTTP Listener ARN
+    Value: !Ref NextJSHTTPLoadBalancerListener
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSHTTPListenerArn"
+
+  NextJSTargetGroupName:
+    Description: Target Group Name
+    Value: !Ref NextJSTargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSTargetGroupName"
+
+  NextJSLoadBalancerDNSName:
+    Description: DNS Name of the Load Balancer
+    Value: !GetAtt NextJSLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSLoadBalancerDNSName"
+
+  NextJSLoadBalancerCanonicalHostedZoneID:
+    Description: Canonical Hosted Zone ID of the Load Balancer
+    Value: !GetAtt NextJSLoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSLoadBalancerCanonicalHostedZoneID"
+
+  NextJSTargetGroupArn:
+    Description: ARN of the Target Group
+    Value: !Ref NextJSTargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSTargetGroupArn"
+
+  NextJSLogGroupName:
+    Description: Name of the Log Group
+    Value: !Ref NextJSLogGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-NextJSLogGroupName"
+
+  InternalWebEndpoint:
+    Description: Internal DNS name for web service (for VPC-internal communication)
+    Value: !Sub "${ServiceDiscoveryName}.${ProjectName}-${Environment}-nextjs.local"
+    Export:
+      Name: !Sub "${AWS::StackName}-InternalWebEndpoint"
+
+  ExternalWebEndpoint:
+    Description: External DNS name for web service (internet-facing)
+    Value: !Sub "${ServiceDiscoveryName}.${DomainNameForCertificate}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ExternalWebEndpoint"
+
+  ServiceDiscoveryNamespaceId:
+    Description: Service Discovery Namespace ID
+    Value: !Ref ServiceDiscoveryNamespace
+    Export:
+      Name: !Sub "${AWS::StackName}-ServiceDiscoveryNamespaceId"

@@ -7,7 +7,7 @@ Also includes webhook endpoints for SendGrid and Gmail push notifications.
 
 import logging
 
-from fastapi import APIRouter, Depends, Header, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 

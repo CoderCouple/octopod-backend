@@ -1,0 +1,186 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Reusable Codebuild Pipeline for Python backend repositories"
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Unique project identifier (e.g., api, auth, notifications)
+    AllowedPattern: '^[a-z0-9-]+$'
+    ConstraintDescription: Must contain only lowercase letters, numbers, and hyphens
+  Environment:
+    Type: String
+    Description: Environment name
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+  GitHubOrgName:
+    Type: String
+    Description: GitHub organization name
+  GitHubRepositoryName:
+    Type: String
+    Description: GitHub repository name
+  ECRRepositoryName:
+    Type: Stringnow that
+    Description: ECR repository name (optional - if not provided, will use ProjectName-Environment)
+    Default: ""
+  GitHubTokenSecretName:
+    Type: String
+    Default: OCTOPOD-BACKEND-GITHUB-TOKEN
+    Description: The name of the secret in AWS Secrets Manager that contains the GitHub token
+
+Conditions:
+  UseDefaultECRName: !Equals [!Ref ECRRepositoryName, ""]
+
+Resources:
+  PythonCodeBuildServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-codebuild-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GitHubTokenSecretName}*
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                Resource: '*'
+
+  PythonCodeBuildProject:
+    Type: 'AWS::CodeBuild::Project'
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-build"
+      Source:
+        Type: GITHUB
+        Location: !Sub "https://github.com/${GitHubOrgName}/${GitHubRepositoryName}.git"
+        GitCloneDepth: 1
+        BuildSpec: 'buildspec.yml'
+        ReportBuildStatus: false
+        InsecureSsl: false
+        GitSubmodulesConfig:
+          FetchSubmodules: false
+        Auth:
+          Type: OAUTH
+          Resource: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString}}"
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Cache:
+        Type: NO_CACHE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref 'AWS::AccountId'
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref 'AWS::Region'
+          - Name: ECR_REPOSITORY_NAME
+            Value: !If [UseDefaultECRName, !Sub "${ProjectName}-${Environment}", !Ref ECRRepositoryName]
+          - Name: ECR_REPOSITORY_URI
+            Value: !GetAtt PythonECRRepository.RepositoryUri
+          - Name: PROJECT_NAME
+            Value: !Ref ProjectName
+          - Name: ENVIRONMENT
+            Value: !Ref Environment
+          - Name: GITHUB_TOKEN_SECRET_NAME
+            Value: !Ref 'GitHubTokenSecretName'
+      ServiceRole: !GetAtt PythonCodeBuildServiceRole.Arn
+      SourceVersion: main
+      TimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 480
+      EncryptionKey: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/s3"
+      VpcConfig: { }
+      BadgeEnabled: false
+      LogsConfig:
+        CloudWatchLogs:
+          Status: "ENABLED"
+        S3Logs:
+          Status: "DISABLED"
+          EncryptionDisabled: false
+      Visibility: "PRIVATE"
+
+  PythonECRRepository:
+    Type: 'AWS::ECR::Repository'
+    Properties:
+      RepositoryName: !If [UseDefaultECRName, !Sub "${ProjectName}-${Environment}", !Ref ECRRepositoryName]
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Expire untagged images after 1 day",
+                "selection": {
+                  "tagStatus": "untagged",
+                  "countType": "sinceImagePushed",
+                  "countUnit": "days",
+                  "countNumber": 1
+                },
+                "action": {
+                  "type": "expire"
+                }
+              },
+              {
+                "rulePriority": 2,
+                "description": "Keep last 20 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 5
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+
+Outputs:
+  PythonCodeBuildProjectName:
+    Description: The name of the CodeBuild project
+    Value: !Ref PythonCodeBuildProject
+    Export:
+      Name: !Sub ${AWS::StackName}-CodeBuildProjectName
+  PythonECRRepositoryUri:
+    Description: The URI of the ECR repository
+    Value: !GetAtt PythonECRRepository.RepositoryUri
+    Export:
+      Name: !Sub ${AWS::StackName}-ECRRepositoryUri

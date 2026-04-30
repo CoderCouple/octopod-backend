@@ -1,0 +1,15 @@
+[
+  {
+    "ParameterKey": "PublicHostedZoneName",
+    "ParameterValue": "context0.ai."
+  },
+  {
+    "ParameterKey": "PublicHostedZoneId",
+    "ParameterValue": "Z03244512LEQXUVHET7FJ"
+  },
+  {
+    "ParameterKey": "NextJSStackName",
+    "ParameterValue": "ctx0ai-dev-nextjs-ecs-stack"
+  }
+]
+

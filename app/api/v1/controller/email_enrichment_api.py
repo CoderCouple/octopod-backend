@@ -58,7 +58,7 @@ async def enrich_batch(
             "confidence": r.confidence,
             "found": r.found,
         }
-        for pid, r in zip(profile_ids, results)
+        for pid, r in zip(profile_ids, results, strict=False)
     ]
     return success_response(items, "Batch enrichment complete")
 

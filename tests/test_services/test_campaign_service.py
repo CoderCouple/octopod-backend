@@ -6,7 +6,7 @@ from app.api.v1.request.email_campaign_request import (
     CreateStepRequest,
 )
 from app.api.v1.request.mailbox_request import ConnectSmtpRequest
-from app.common.exceptions import EntityNotFoundError, InvalidStateTransitionError
+from app.common.exceptions import InvalidStateTransitionError
 from app.service.campaign_service import CampaignService
 from app.service.mailbox_service import MailboxService
 

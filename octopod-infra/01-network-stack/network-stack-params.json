@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "OrganizationName",
+    "ParameterValue": "OctopodAI"
+  },
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "octopodai"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "CidrBlock",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "OfficeIp",
+    "ParameterValue": "174.62.107.97/32"
+  },
+  {
+    "ParameterKey": "Changelog",
+    "ParameterValue": "Initial"
+  }
+]

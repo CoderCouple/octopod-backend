@@ -1,0 +1,283 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudFormation template for Next.js CodePipeline, IAM Role, and CodeStar Notifications."
+
+Parameters:
+  PipelineName:
+    Type: String
+    Default: "ctx0ai-dev-nextjs-cicd-pipeline"
+    Description: "Name of the CodePipeline."
+
+  GitHubOrganization:
+    Type: String
+    Default: "ContextZeroAI"
+    Description: "Org of the GitHub repository."
+
+  GitHubRepo:
+    Type: String
+    Default: "context0-next-frontend"
+    Description: "Name of the GitHub repository."
+
+  CodeBuildProjectName:
+    Type: String
+    Default: "ctx0-web-dev-build"
+    Description: "Name of the CodeBuild project."
+
+  ClusterStackName:
+    Type: String
+    AllowedPattern: "\\S+"
+    Default: "ctx0ai-dev-ecs-cluster-stack"
+    Description: "Name of the cluster stack."
+
+  ECSServiceName:
+    Type: String
+    Default: "ctx0ai-dev-nextjs-service"
+    Description: "Name of the ECS service."
+
+  SNSTopicName:
+    Type: String
+    Default: "ctx0ai-dev-nextjs-cicd-pipeline"
+    Description: "Name of SNS topic for CodeStar notifications."
+
+  GitHubTokenSecretName:
+    Type: String
+    Default: "CONTEXT0-BACKEND-GITHUB-TOKEN"
+    Description: "The name of the secret in AWS Secrets Manager that contains the GitHub OAuth token."
+
+  UseCodeStarConnection:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Use CodeStar Connections instead of GitHub OAuth"
+
+  CodeStarConnectionArn:
+    Type: String
+    Default: ""
+    Description: "ARN of the CodeStar Connections connection for GitHub (required if UseCodeStarConnection is true)"
+
+
+Conditions:
+  UseCodeStar: !Equals [!Ref UseCodeStarConnection, "true"]
+  UseGitHubOAuth: !Not [!Equals [!Ref UseCodeStarConnection, "true"]]
+
+Resources:
+  CodePipelineBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "nextjs-codepipeline-${AWS::Region}-${AWS::AccountId}"
+
+  SNSTopic:
+    Type: "AWS::SNS::Topic"
+    Properties:
+      DisplayName: !Sub "${SNSTopicName}"
+      TopicName: !Sub "${SNSTopicName}-sns-topic"
+
+  SNSTopicPolicy:
+    Type: "AWS::SNS::TopicPolicy"
+    Properties:
+      PolicyDocument: !Sub |
+        {
+          "Version": "2008-10-17",
+          "Statement": [
+            {
+              "Sid": "CodeNotification_publish",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "codestar-notifications.amazonaws.com"
+              },
+              "Action": "SNS:Publish",
+              "Resource": "${SNSTopic}"
+            }
+          ]
+        }
+      Topics:
+        - !Ref SNSTopic
+
+  CodePipelinePolicy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "codepipeline:*"
+              - "codebuild:*"
+              - "codedeploy:*"
+              - "s3:*"
+              - "iam:PassRole"
+              - "codestar-connections:UseConnection"
+              - "ecs:DescribeServices"
+              - "ecs:DescribeTaskDefinition"
+              - "ecs:DescribeTasks"
+              - "ecs:ListTasks"
+              - "ecs:UpdateService"
+              - "ecs:RunTask"
+              - "ecs:StopTask"
+              - "ecs:RegisterTaskDefinition"
+              - "ecs:DeregisterTaskDefinition"
+              - "ecs:CreateService"
+              - "ecs:DeleteService"
+              - "ecs:DescribeContainerInstances"
+              - "ecs:ListContainerInstances"
+              - "secretsmanager:GetSecretValue"
+            Resource: "*"
+      ManagedPolicyName: !Sub "AWSCodePipelineServiceRole-${AWS::Region}-${PipelineName}"
+
+  IAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/service-role/"
+      RoleName: !Sub "CodePipeline-${PipelineName}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "codepipeline.amazonaws.com"
+            Action: "sts:AssumeRole"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Ref CodePipelinePolicy
+
+  CodePipelinePipeline:
+    Type: "AWS::CodePipeline::Pipeline"
+    Properties:
+      Name: !Ref PipelineName
+      RoleArn: !GetAtt IAMRole.Arn
+      ExecutionMode: QUEUED
+      PipelineType: V2
+      RestartExecutionOnUpdate: false
+      ArtifactStore:
+        Location: !Ref CodePipelineBucket
+        Type: "S3"
+      Stages:
+        - Name: "Source"
+          Actions:
+            - Name: "Source"
+              ActionTypeId:
+                Category: "Source"
+                Owner: !If [UseCodeStar, "AWS", "ThirdParty"]
+                Provider: !If [UseCodeStar, "CodeStarSourceConnection", "GitHub"]
+                Version: "1"
+              Configuration: !If
+                - UseCodeStar
+                - ConnectionArn: !Ref CodeStarConnectionArn
+                  FullRepositoryId: !Sub "${GitHubOrganization}/${GitHubRepo}"
+                  BranchName: "main"
+                  OutputArtifactFormat: "CODE_ZIP"
+                - Branch: "main"
+                  OAuthToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString}}"
+                  Owner: !Ref GitHubOrganization
+                  PollForSourceChanges: "false"
+                  Repo: !Ref GitHubRepo
+              OutputArtifacts:
+                - Name: "SourceArtifact"
+              Region: !Ref AWS::Region
+              Namespace: "SourceVariables"
+              RunOrder: 1
+        - Name: "Build"
+          Actions:
+            - Name: "Build"
+              ActionTypeId:
+                Category: "Build"
+                Owner: "AWS"
+                Provider: "CodeBuild"
+                Version: "1"
+              Configuration:
+                ProjectName: !Ref CodeBuildProjectName
+              InputArtifacts:
+                - Name: "SourceArtifact"
+              OutputArtifacts:
+                - Name: "BuildArtifact"
+              Region: !Ref AWS::Region
+              Namespace: "BuildVariables"
+              RunOrder: 1
+        - Name: "Deploy"
+          Actions:
+            - Name: "Deploy"
+              ActionTypeId:
+                Category: "Deploy"
+                Owner: "AWS"
+                Provider: "ECS"
+                Version: "1"
+              Configuration:
+                ClusterName: !ImportValue
+                  'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+                DeploymentTimeout: "30"
+                ServiceName: !Ref ECSServiceName
+              InputArtifacts:
+                - Name: "BuildArtifact"
+              Region: !Ref AWS::Region
+              Namespace: "DeployVariables"
+              RunOrder: 1
+
+  CodePipelineWebhook:
+    Type: "AWS::CodePipeline::Webhook"
+    Condition: UseGitHubOAuth
+    Properties:
+      Name: !Sub "${PipelineName}--Source--${GitHubOrganization}-${GitHubRepo}--${AWS::AccountId}"
+      TargetPipeline: !Ref PipelineName
+      TargetAction: "Source"
+      Authentication: "GITHUB_HMAC"
+      AuthenticationConfiguration:
+        SecretToken: !Sub "{{resolve:secretsmanager:${GitHubTokenSecretName}:SecretString}}"
+      Filters:
+        - JsonPath: "$.ref"
+          MatchEquals: "refs/heads/main"
+      TargetPipelineVersion: "2"
+
+  CodeStarNotificationsNotificationRule:
+    Type: "AWS::CodeStarNotifications::NotificationRule"
+    Properties:
+      DetailType: "FULL"
+      EventTypeIds:
+        - "codepipeline-pipeline-action-execution-canceled"
+        - "codepipeline-pipeline-action-execution-failed"
+        - "codepipeline-pipeline-action-execution-started"
+        - "codepipeline-pipeline-action-execution-succeeded"
+        - "codepipeline-pipeline-manual-approval-failed"
+        - "codepipeline-pipeline-manual-approval-needed"
+        - "codepipeline-pipeline-manual-approval-succeeded"
+        - "codepipeline-pipeline-pipeline-execution-canceled"
+        - "codepipeline-pipeline-pipeline-execution-failed"
+        - "codepipeline-pipeline-pipeline-execution-resumed"
+        - "codepipeline-pipeline-pipeline-execution-started"
+        - "codepipeline-pipeline-pipeline-execution-succeeded"
+        - "codepipeline-pipeline-pipeline-execution-superseded"
+        - "codepipeline-pipeline-stage-execution-canceled"
+        - "codepipeline-pipeline-stage-execution-failed"
+        - "codepipeline-pipeline-stage-execution-resumed"
+        - "codepipeline-pipeline-stage-execution-started"
+        - "codepipeline-pipeline-stage-execution-succeeded"
+      Name: !Sub "${PipelineName}-notifications"
+      Resource: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${PipelineName}"
+      Status: "ENABLED"
+      Targets:
+        - TargetAddress: !Ref SNSTopic
+          TargetType: "SNS"
+      Tags: {}
+
+Outputs:
+  PipelineName:
+    Description: Name of the CodePipeline
+    Value: !Ref CodePipelinePipeline
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineName"
+  
+  PipelineArn:
+    Description: ARN of the CodePipeline
+    Value: !Sub "arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:pipeline/${PipelineName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-PipelineArn"
+  
+  S3BucketName:
+    Description: Name of the S3 bucket for pipeline artifacts
+    Value: !Ref CodePipelineBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-S3BucketName"
+  
+  SNSTopicArn:
+    Description: ARN of the SNS topic for notifications
+    Value: !Ref SNSTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-SNSTopicArn"

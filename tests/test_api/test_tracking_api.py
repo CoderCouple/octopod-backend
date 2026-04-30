@@ -1,7 +1,6 @@
 import uuid
 
 import pytest
-import pytest_asyncio
 
 from app.db.repository.email_message_repository import EmailMessageRepository
 from app.model.email_message_model import EmailMessage

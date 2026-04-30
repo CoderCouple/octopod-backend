@@ -1,0 +1,42 @@
+[
+  {
+    "ParameterKey": "GitHubTokenSecretName",
+    "ParameterValue": "CONTEXT0-BACKEND-GITHUB-TOKEN"
+  },
+  {
+    "ParameterKey": "PipelineName",
+    "ParameterValue": "ctx0ai-dev-python-cicd-pipeline"
+  },
+  {
+    "ParameterKey": "GitHubOrganization",
+    "ParameterValue": "ContextZeroAI"
+  },
+  {
+    "ParameterKey": "GitHubRepo",
+    "ParameterValue": "context0-python-backend"
+  },
+  {
+    "ParameterKey": "CodeBuildProjectName",
+    "ParameterValue": "ctx0-api-dev-build"
+  },
+  {
+    "ParameterKey": "ClusterStackName",
+    "ParameterValue": "ctx0ai-dev-ecs-cluster-stack"
+  },
+  {
+    "ParameterKey": "ECSServiceName",
+    "ParameterValue": "ctx0ai-dev-python-service"
+  },
+  {
+    "ParameterKey": "SNSTopicName",
+    "ParameterValue": "ctx0ai-dev-python-cicd-pipeline"
+  },
+  {
+    "ParameterKey": "UseCodeStarConnection",
+    "ParameterValue": "false"
+  },
+  {
+    "ParameterKey": "CodeStarConnectionArn",
+    "ParameterValue": ""
+  }
+]

@@ -1,8 +1,6 @@
 import pytest
-import pytest_asyncio
 
 from app.api.v1.request.mailbox_request import ConnectSmtpRequest, UpdateMailboxRequest
-from app.model.mailbox_model import Mailbox
 from app.service.mailbox_service import MailboxService
 
 

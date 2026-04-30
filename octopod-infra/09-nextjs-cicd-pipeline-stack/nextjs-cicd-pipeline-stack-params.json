@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "PipelineName",
+    "ParameterValue": "ctx0ai-dev-nextjs-cicd-pipeline"
+  },
+  {
+    "ParameterKey": "GitHubOrganization",
+    "ParameterValue": "ContextZeroAI"
+  },
+  {
+    "ParameterKey": "GitHubRepo",
+    "ParameterValue": "context0-next-frontend"
+  },
+  {
+    "ParameterKey": "CodeBuildProjectName",
+    "ParameterValue": "ctx0-web-dev-build"
+  },
+  {
+    "ParameterKey": "ClusterStackName",
+    "ParameterValue": "ctx0ai-dev-ecs-cluster-stack"
+  },
+  {
+    "ParameterKey": "ECSServiceName",
+    "ParameterValue": "ctx0ai-dev-nextjs-service"
+  },
+  {
+    "ParameterKey": "SNSTopicName",
+    "ParameterValue": "ctx0ai-dev-nextjs-cicd-pipeline"
+  },
+  {
+    "ParameterKey": "GitHubTokenSecretName",
+    "ParameterValue": "CONTEXT0-BACKEND-GITHUB-TOKEN"
+  },
+  {
+    "ParameterKey": "UseCodeStarConnection",
+    "ParameterValue": "false"
+  }
+]

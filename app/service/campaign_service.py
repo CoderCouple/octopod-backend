@@ -37,7 +37,6 @@ from app.model.campaign_recipient_model import CampaignRecipient
 from app.model.campaign_step_model import CampaignStep
 from app.model.email_campaign_model import EmailCampaign
 from app.model.email_message_model import EmailMessage
-from app.settings import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "octopodai"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "QdrantUrl",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  },
+  {
+    "ParameterKey": "QdrantApiKey",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  }
+]

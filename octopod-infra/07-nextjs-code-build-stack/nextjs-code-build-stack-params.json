@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "ctx0-web"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "GitHubOrgName",
+    "ParameterValue": "ContextZeroAI"
+  },
+  {
+    "ParameterKey": "GitHubRepositoryName",
+    "ParameterValue": "context0-next-frontend"
+  },
+  {
+    "ParameterKey": "ECRRepositoryName",
+    "ParameterValue": "ctx0-web-dev-ecr-repo"
+  },
+  {
+    "ParameterKey": "AWSRegion",
+    "ParameterValue": "us-west-2"
+  },
+  {
+    "ParameterKey": "GitHubTokenSecretName",
+    "ParameterValue": "CONTEXT0-BACKEND-GITHUB-TOKEN"
+  }
+]

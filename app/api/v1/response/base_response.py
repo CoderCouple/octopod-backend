@@ -1,4 +1,4 @@
-from typing import Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -18,10 +18,10 @@ class BaseResponse(BaseModel, Generic[T]):
         success: Whether the operation succeeded.
     """
 
-    result: Optional[T] = None
+    result: T | None = None
     status_code: int
-    message: Optional[str] = None
-    success: Optional[bool] = None
+    message: str | None = None
+    success: bool | None = None
 
 
 def success_response(

@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "octopodai"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "DBName",
+    "ParameterValue": "octopod_db"
+  },
+  {
+    "ParameterKey": "NetworkStackName",
+    "ParameterValue": "octopodai-dev-network-stack"
+  },
+  {
+    "ParameterKey": "DBAllocatedStorage",
+    "ParameterValue": "20"
+  },
+  {
+    "ParameterKey": "DBMasterUsername",
+    "ParameterValue": "dbadmin"
+  }
+]

@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Secrets Manager secret for Qdrant Cloud credentials
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  QdrantUrl:
+    Description: Qdrant Cloud cluster URL (e.g. https://xxx.aws.cloud.qdrant.io:6333)
+    Type: String
+    NoEcho: true
+  QdrantApiKey:
+    Description: Qdrant Cloud API key
+    Type: String
+    NoEcho: true
+
+Resources:
+
+  QdrantCloudSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-qdrant-cloud'
+      Description: Qdrant Cloud connection credentials
+      SecretString: !Sub |
+        {"url":"${QdrantUrl}","api_key":"${QdrantApiKey}"}
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-qdrant-cloud-secret
+
+Outputs:
+  QdrantSecretArn:
+    Description: ARN of the Secrets Manager secret for Qdrant Cloud credentials
+    Value: !Ref QdrantCloudSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-QdrantSecretArn'
+
+  QdrantSecretName:
+    Description: Name of the Secrets Manager secret
+    Value: !Sub '${ProjectName}-${Environment}-qdrant-cloud'
+    Export:
+      Name: !Sub '${AWS::StackName}-QdrantSecretName'
