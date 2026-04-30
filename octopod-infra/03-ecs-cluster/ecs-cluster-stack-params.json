@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "ClusterMinSize",
-    "ParameterValue": "1"
+    "ParameterValue": "2"
   },
   {
     "ParameterKey": "ClusterMaxSize",

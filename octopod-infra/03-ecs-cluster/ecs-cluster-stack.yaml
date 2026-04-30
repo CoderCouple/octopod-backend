@@ -49,7 +49,7 @@ Mappings:
 
   EnvironmentInstanceTypes:
     dev:
-      EC2InstanceType: t3a.micro  # AMD-based, ~10% cheaper than t3.micro
+      EC2InstanceType: t3a.medium  # 4 GB RAM — one for backend, one for frontend
     prod:
       EC2InstanceType: t3.large   # Much cheaper than c5.4xlarge for general workloads
 
