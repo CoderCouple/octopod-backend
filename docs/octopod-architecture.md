@@ -2,11 +2,11 @@
                                                                                                                                                                                                        
   High-Level Architecture
 
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │                        FastAPI Application                          │
-  │                         (app/main.py)                               │
+  ┌────────────────────────────────────────────────────────────────────┐
+  │                        FastAPI Application                         │
+  │                         (app/main.py)                              │
   ├─────────────┬──────────────┬──────────────┬────────────────────────┤
-  │  Middleware  │   API Layer  │   Services   │   Background Tasks     │
+  │  Middleware │   API Layer  │   Services   │   Background Tasks     │
   │  ─────────  │   ─────────  │   ────────   │   ────────────────     │
   │  • Auth     │  /api/v1/*   │  • Search    │  • Ingestion jobs      │
   │  • CORS     │  33 ingest   │  • Profile   │  • Pipeline steps      │
@@ -14,18 +14,18 @@
   │             │  5 profile   │  • Ranking   │  • Identity resolution │
   │             │  2 health    │              │  • Embedding           │
   └─────────────┴──────────────┴──────────────┴────────────────────────┘
-           │              │              │               │
+           │                    │              │               
       ┌────▼────┐          ┌────▼────┐   ┌─────▼─────┐
-      │PostgreSQL│          │ Qdrant  │   │OpenSearch │
-      │ (asyncpg)│          │(vectors)│   │ (keyword) │
+      │PostgreSQL│         │ Qdrant  │   │OpenSearch │
+      │ (asyncpg)│         │(vectors)│   │ (keyword) │
       └─────────┘          └─────────┘   └───────────┘
 
   Database Layer (PostgreSQL + Qdrant + OpenSearch)
 
-  ┌── PostgreSQL ──────────────────────────────────────────────────────┐
+  ┌── PostgreSQL  ──────────────────────────────────────────────────────┐
   │                                                                     │
   │  Raw Ingestion Tables          Bridge/Profile Tables                │
-  │  ────────────────────          ─────────────────────               │
+  │  ────────────────────          ─────────────────────                │
   │  • gh_users                    • developer_profile                  │
   │  • gh_repos                    • merge_candidate                    │
   │  • gh_contributions            • profile_embedding                  │
@@ -46,15 +46,15 @@
   │                                                                     │
   └─────────────────────────────────────────────────────────────────────┘
 
-  ┌── Qdrant ──────────────────────────────────────┐
+  ┌── Qdrant  ──────────────────────────────────────┐
   │  Collection: developer_profiles                 │
-  │  • 384-dim vectors (MiniLM-L6-v2)              │
+  │  • 384-dim vectors (MiniLM-L6-v2)               │
   │  • payload: embedding_text + meta               │
   └─────────────────────────────────────────────────┘
 
-  ┌── OpenSearch ──────────────────────────────────────────────────────┐
+  ┌── OpenSearch  ──────────────────────────────────────────────────────┐
   │  Index: developer_profiles                                          │
-  │  • Full-text search on bio, skills, repos, contributions           │
+  │  • Full-text search on bio, skills, repos, contributions            │
   └─────────────────────────────────────────────────────────────────────┘
 
   Request Flow
@@ -63,13 +63,13 @@
         │
         ▼
   ┌─────────────┐
-  │  Middleware  │──► CORS ──► Auth (API key check) ──► Logging
+  │  Middleware │──► CORS ──► Auth (API key check) ──► Logging
   └──────┬──────┘
          │
          ▼
   ┌─────────────┐     ┌──────────────────────────────────┐
-  │  Router     │────►│  app/api/v1/router.py             │
-  │  /api/v1    │     │  Includes all controller routers  │
+  │  Router     │────►│  app/api/v1/router.py            │
+  │  /api/v1    │     │  Includes all controller routers │
   └──────┬──────┘     └──────────────────────────────────┘
          │
          ├──► /ingest/*      → 5 ingest controllers (33 endpoints)

@@ -17,6 +17,9 @@ help:
 	@echo "  docker-build  Build and start all services"
 	@echo "  docker-logs   Tail logs"
 	@echo "  docker-db     Start only PostgreSQL + pgAdmin"
+	@echo ""
+	@echo "AWS commands:"
+	@echo "  db-tunnel     SSM tunnel to AWS RDS → localhost:5433"
 
 install:
 	poetry install
@@ -100,3 +103,14 @@ ingest-status:
 embed-profiles:
 	@echo "Triggering batch embedding of all profiles..."
 	curl -s -X POST "http://localhost:8000/api/v1/developer-profile/embed-all?force=true" | python -m json.tool
+
+# AWS DB tunnel (SSM port-forwarding to RDS)
+db-tunnel:
+	@echo "Opening SSM tunnel → localhost:5433 → RDS:5432"
+	@echo "DataGrip: host=localhost port=5433 db=octopod_db user=dbadmin"
+	@echo "Press Ctrl+C to close tunnel"
+	aws ssm start-session \
+		--target i-03ce8fd4a1a4ca5e4 \
+		--document-name AWS-StartPortForwardingSessionToRemoteHost \
+		--parameters '{"host":["octopodai-dev-postgress-db-stack-rdsdbinstance-rzqxkz9nu7pl.chq0wu4euqqh.us-west-2.rds.amazonaws.com"],"portNumber":["5432"],"localPortNumber":["5433"]}' \
+		--region us-west-2
