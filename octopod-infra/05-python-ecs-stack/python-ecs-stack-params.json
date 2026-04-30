@@ -36,6 +36,10 @@
     "ParameterValue": "octopodai.app"
   },
   {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z01109651O85TIUV7ZIYT"
+  },
+  {
     "ParameterKey": "ServiceDiscoveryName",
     "ParameterValue": "api"
   },

@@ -1,14 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
-  Python FastAPI ECS service — includes Route53 hosted zone, wildcard ACM
-  certificate, ALB, ECS service, auto-scaling, and service discovery.
-
-  DEPLOYMENT FLOW (do NOT wait for stack to finish before step 2):
-  1. Run create-stack
-  2. After ~30s the hosted zone is ready — run describe-stacks to get
-     HostedZoneNameServers output and update your registrar's NS records
-  3. ACM cert validates automatically (2-30 min after NS propagation)
-  4. Stack reaches CREATE_COMPLETE
+  Python FastAPI ECS service — wildcard ACM certificate, ALB, ECS service,
+  auto-scaling, and service discovery. Hosted zone is pre-existing (not managed
+  by this stack).
 
 Parameters:
   ProjectName:
@@ -45,6 +39,10 @@ Parameters:
     Type: String
     Default: octopodai.app
     Description: Public domain (e.g. octopodai.app) — no trailing dot
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z01109651O85TIUV7ZIYT
+    Description: ID of the existing Route53 public hosted zone for DomainName
   ServiceDiscoveryName:
     Type: String
     Default: api
@@ -64,21 +62,8 @@ Conditions:
 Resources:
 
   # ---------------------------------------------------------------------------
-  # Route53 Public Hosted Zone
-  # ---------------------------------------------------------------------------
-  PublicHostedZone:
-    Type: AWS::Route53::HostedZone
-    Properties:
-      Name: !Ref DomainName
-      HostedZoneConfig:
-        Comment: !Sub 'Public hosted zone for ${DomainName}'
-      HostedZoneTags:
-        - Key: Name
-          Value: !Sub ${ProjectName}-${Environment}-hosted-zone
-
-  # ---------------------------------------------------------------------------
   # Wildcard ACM Certificate (*.octopodai.app + octopodai.app)
-  # CloudFormation auto-creates DNS validation records in the hosted zone above.
+  # CloudFormation auto-creates DNS validation records in the existing hosted zone.
   # ---------------------------------------------------------------------------
   WildcardCertificate:
     Type: AWS::CertificateManager::Certificate
@@ -89,7 +74,7 @@ Resources:
       ValidationMethod: DNS
       DomainValidationOptions:
         - DomainName: !Sub '*.${DomainName}'
-          HostedZoneId: !Ref PublicHostedZone
+          HostedZoneId: !Ref HostedZoneId
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-${Environment}-wildcard-cert
@@ -529,7 +514,7 @@ Resources:
   AppDNSRecord:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneId: !Ref PublicHostedZone
+      HostedZoneId: !Ref HostedZoneId
       Name: !Sub '${ServiceDiscoveryName}.${DomainName}'
       Type: A
       AliasTarget:
@@ -538,19 +523,6 @@ Resources:
         HostedZoneId: !GetAtt PythonLoadBalancer.CanonicalHostedZoneID
 
 Outputs:
-
-  HostedZoneId:
-    Description: Route53 hosted zone ID (import into other stacks for DNS records)
-    Value: !Ref PublicHostedZone
-    Export:
-      Name: !Sub '${AWS::StackName}-HostedZoneId'
-
-  HostedZoneNameServers:
-    Description: >
-      NS records — update your domain registrar to activate DNS.
-      Run: aws cloudformation describe-stacks --stack-name <name> --query
-      "Stacks[0].Outputs[?OutputKey=='HostedZoneNameServers'].OutputValue"
-    Value: !Join [', ', !GetAtt PublicHostedZone.NameServers]
 
   WildcardCertificateArn:
     Description: ARN of the wildcard ACM certificate
