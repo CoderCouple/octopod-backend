@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "UserPoolDomainPrefix",
+    "ParameterValue": "octopodai-dev"
+  },
+  {
+    "ParameterKey": "CallbackURLs",
+    "ParameterValue": "http://localhost:3001/auth/callback,https://octopodai.app/auth/callback"
+  },
+  {
+    "ParameterKey": "LogoutURLs",
+    "ParameterValue": "http://localhost:3001,https://octopodai.app"
+  }
+]

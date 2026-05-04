@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -82,6 +83,55 @@ async def async_client(async_engine) -> AsyncGenerator[AsyncClient, None]:
                 raise
 
     app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+    app.dependency_overrides.clear()
+
+
+FAKE_COGNITO_CLAIMS = {
+    "sub": "test-user-00000000-0000-0000-0000-000000000001",
+    "email": "test@example.com",
+    "iss": "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_FAKE",
+    "aud": "fake-client-id",
+    "token_use": "id",
+}
+
+
+@pytest_asyncio.fixture(scope="function")
+async def authenticated_client(async_engine) -> AsyncGenerator[AsyncClient, None]:
+    """AsyncClient with Cognito JWT validation mocked — requests appear authenticated."""
+    from app.common.auth.cognito import get_current_user, get_current_user_optional
+    from app.db.session import get_db
+    from app.main import app
+
+    session_factory = async_sessionmaker(
+        bind=async_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+
+    async def override_get_current_user():
+        return FAKE_COGNITO_CLAIMS
+
+    async def override_get_current_user_optional():
+        return FAKE_COGNITO_CLAIMS
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_current_user_optional] = override_get_current_user_optional
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac

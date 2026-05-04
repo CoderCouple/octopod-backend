@@ -104,7 +104,12 @@ class Settings(BaseSettings):
     opensearch_username: str | None = None
     opensearch_password: str | None = None
 
-    # Security
+    # AWS Cognito
+    cognito_user_pool_id: str = ""
+    cognito_region: str = "us-west-2"
+    cognito_app_client_id: str = ""
+
+    # Security (legacy — kept for backward compat)
     secret_key: str = "your-secret-key-here-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
@@ -135,6 +140,20 @@ class Settings(BaseSettings):
     default_daily_send_limit: int = 35
     reply_check_interval: int = 300
     token_encryption_key: str = ""
+
+    @property
+    def cognito_jwks_url(self) -> str:
+        return (
+            f"https://cognito-idp.{self.cognito_region}.amazonaws.com"
+            f"/{self.cognito_user_pool_id}/.well-known/jwks.json"
+        )
+
+    @property
+    def cognito_issuer(self) -> str:
+        return (
+            f"https://cognito-idp.{self.cognito_region}.amazonaws.com"
+            f"/{self.cognito_user_pool_id}"
+        )
 
     model_config = SettingsConfigDict(
         env_file=_detect_env_file(),

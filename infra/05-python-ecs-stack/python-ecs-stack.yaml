@@ -1,0 +1,600 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Python FastAPI ECS service — wildcard ACM certificate, ALB, ECS service,
+  auto-scaling, and service discovery. Hosted zone is pre-existing (not managed
+  by this stack).
+
+Parameters:
+  ProjectName:
+    Type: String
+  Environment:
+    Type: String
+    AllowedValues: [dev, prod]
+  NetworkStackName:
+    Type: String
+    Default: octopodai-dev-network-stack
+    AllowedPattern: \S+
+  ClusterStackName:
+    Type: String
+    Default: octopodai-dev-ecs-cluster
+    AllowedPattern: \S+
+  CodeBuildStackName:
+    Type: String
+    Default: octopodai-dev-python-codebuild-stack
+    AllowedPattern: \S+
+    Description: Stack 02 — exports PythonECRRepositoryUri
+  DBStackName:
+    Type: String
+    Default: octopodai-dev-postgress-db-stack
+    AllowedPattern: \S+
+  QdrantStackName:
+    Type: String
+    Default: octopodai-dev-qdrant-cloud-stack
+    AllowedPattern: \S+
+  OpenSearchStackName:
+    Type: String
+    Default: octopodai-dev-opensearch-stack
+    AllowedPattern: \S+
+  DomainName:
+    Type: String
+    Default: octopodai.app
+    Description: Public domain (e.g. octopodai.app) — no trailing dot
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z01109651O85TIUV7ZIYT
+    Description: ID of the existing Route53 public hosted zone for DomainName
+  ServiceDiscoveryName:
+    Type: String
+    Default: api
+    Description: Subdomain for the API (api.octopodai.app)
+  ClusterMinSize:
+    Type: Number
+    Default: 1
+    MinValue: 1
+  ClusterMaxSize:
+    Type: Number
+    Default: 2
+    MinValue: 1
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, prod]
+
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # Wildcard ACM Certificate (*.octopodai.app + octopodai.app)
+  # CloudFormation auto-creates DNS validation records in the existing hosted zone.
+  # ---------------------------------------------------------------------------
+  WildcardCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '*.${DomainName}'
+      SubjectAlternativeNames:
+        - !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub '*.${DomainName}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-wildcard-cert
+
+  # ---------------------------------------------------------------------------
+  # IAM — Execution Role (ECS agent: pull image, write logs, read secrets)
+  # ---------------------------------------------------------------------------
+  PythonECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-${Environment}-ecs-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: secrets-and-ecr
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !ImportValue
+                    'Fn::Sub': '${DBStackName}-DBSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+
+  # ---------------------------------------------------------------------------
+  # IAM — Task Role (container runtime permissions)
+  # ---------------------------------------------------------------------------
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ProjectName}-${Environment}-ecs-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: task-permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:aws:s3:::${ProjectName}-${Environment}-*
+                  - !Sub arn:aws:s3:::${ProjectName}-${Environment}-*/*
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !ImportValue
+                    'Fn::Sub': '${DBStackName}-DBSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+
+  # ---------------------------------------------------------------------------
+  # CloudWatch Log Group
+  # ---------------------------------------------------------------------------
+  PythonLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${ProjectName}-${Environment}-python
+      RetentionInDays: !If [IsProd, 30, 14]
+
+  # ---------------------------------------------------------------------------
+  # ECS Task Definition
+  # Image: pulled from Stack 02 (octopod-backend-ecr-repo)
+  # Secrets: resolved at task startup from Secrets Manager
+  # ---------------------------------------------------------------------------
+  PythonECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-${Environment}-python
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [EC2]
+      Memory: 768   # fits t3a.micro (1 GB) with headroom for ECS agent
+      Cpu: 384
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ExecutionRoleArn: !GetAtt PythonECSExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: fastapi-container
+          Image: !Sub
+            - '${ECRUri}:latest'
+            - ECRUri: !ImportValue
+                'Fn::Sub': '${CodeBuildStackName}-ECRRepositoryUri'
+          Essential: true
+          Memory: 700
+          MemoryReservation: 512
+          Cpu: 384
+          PortMappings:
+            - ContainerPort: 8000
+              HostPort: 8000
+              Protocol: tcp
+          Ulimits:
+            - Name: nofile
+              SoftLimit: 4000
+              HardLimit: 4000
+          HealthCheck:
+            Command: [CMD-SHELL, 'curl -sf http://localhost:8000/api/v1/health || exit 1']
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
+
+          # Non-sensitive environment variables
+          Environment:
+            - Name: APP_NAME
+              Value: Octopod Backend
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: DEBUG
+              Value: !If [IsProd, 'false', 'false']
+            - Name: HOST
+              Value: '0.0.0.0'
+            - Name: PORT
+              Value: '8000'
+            - Name: API_PREFIX
+              Value: /api/v1
+            - Name: ALLOWED_ORIGINS
+              Value: !If [IsProd, '["https://octopodai.app","https://www.octopodai.app"]', '["*"]']
+            - Name: POSTGRES_HOST
+              Value: !ImportValue
+                'Fn::Sub': '${DBStackName}-DBEndpoint'
+            - Name: POSTGRES_PORT
+              Value: '5432'
+            - Name: POSTGRES_DB
+              Value: !ImportValue
+                'Fn::Sub': '${DBStackName}-DBName'
+            - Name: EMBEDDING_MODEL
+              Value: all-MiniLM-L6-v2
+            - Name: EMBEDDING_PROVIDER
+              Value: sentence_transformer
+            - Name: EMBEDDING_DIMENSION
+              Value: '384'
+            - Name: OPENSEARCH_ENABLED
+              Value: 'true'
+            - Name: OPENSEARCH_HOST
+              Value: !ImportValue
+                'Fn::Sub': '${OpenSearchStackName}-DomainEndpoint'
+            - Name: OPENSEARCH_PORT
+              Value: '443'
+            - Name: OPENSEARCH_USE_SSL
+              Value: 'true'
+            - Name: OPENSEARCH_INDEX
+              Value: octopod_profiles
+            - Name: TRACKING_BASE_URL
+              Value: !Sub 'https://${ServiceDiscoveryName}.${DomainName}'
+            - Name: SEND_WORKER_POLL_INTERVAL
+              Value: '30'
+            - Name: SEND_WORKER_BATCH_SIZE
+              Value: '50'
+            - Name: DEFAULT_DAILY_SEND_LIMIT
+              Value: '35'
+            - Name: REPLY_CHECK_INTERVAL
+              Value: '300'
+            - Name: COGNITO_USER_POOL_ID
+              Value: !ImportValue
+                'Fn::Sub': 'octopod-cognito-UserPoolId'
+            - Name: COGNITO_REGION
+              Value: !ImportValue
+                'Fn::Sub': 'octopod-cognito-CognitoRegion'
+            - Name: COGNITO_APP_CLIENT_ID
+              Value: !ImportValue
+                'Fn::Sub': 'octopod-cognito-FrontendAppClientId'
+
+          # Sensitive values — resolved from Secrets Manager at task startup
+          Secrets:
+            - Name: POSTGRES_USER
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${DBStackName}-DBSecretArn'
+                  - ':username::'
+            - Name: POSTGRES_PASSWORD
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${DBStackName}-DBSecretArn'
+                  - ':password::'
+            - Name: QDRANT_URL
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
+                  - ':url::'
+            - Name: QDRANT_API_KEY
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
+                  - ':api_key::'
+            - Name: OPENSEARCH_USERNAME
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+                  - ':username::'
+            - Name: OPENSEARCH_PASSWORD
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+                  - ':password::'
+
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref PythonLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+              mode: non-blocking
+              max-buffer-size: 4m
+
+  # ---------------------------------------------------------------------------
+  # Service Discovery (VPC-internal: api.octopodai-dev.local)
+  # ---------------------------------------------------------------------------
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}.local'
+      Vpc: !ImportValue
+        'Fn::Sub': '${NetworkStackName}-VPCID'
+
+  ServiceDiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: !Ref ServiceDiscoveryName
+      DnsConfig:
+        DnsRecords:
+          - Type: A
+            TTL: 60
+        NamespaceId: !Ref ServiceDiscoveryNamespace
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  # ---------------------------------------------------------------------------
+  # ALB — internet-facing, public subnets
+  # ---------------------------------------------------------------------------
+  PythonLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-alb'
+      Scheme: internet-facing
+      SecurityGroups:
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-ExtApiELBSecurityGroup'
+      Subnets:
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-PublicSubnetA'
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-PublicSubnetB'
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-PublicSubnetC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-alb
+
+  PythonTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: PythonLoadBalancer
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-tg'
+      TargetType: ip
+      Protocol: HTTP
+      Port: 8000
+      VpcId: !ImportValue
+        'Fn::Sub': '${NetworkStackName}-VPCID'
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /api/v1/health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-tg
+
+  # HTTP → HTTPS redirect
+  PythonHTTPLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PythonLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: '443'
+            StatusCode: HTTP_301
+
+  # HTTPS → target group
+  PythonHTTPSLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref PythonLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref WildcardCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref PythonTargetGroup
+
+  # ---------------------------------------------------------------------------
+  # ECS Service
+  # ---------------------------------------------------------------------------
+  PythonECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - PythonHTTPSLoadBalancerListener
+      - PythonHTTPLoadBalancerListener
+    Properties:
+      ServiceName: !Sub '${ProjectName}-${Environment}-python-service'
+      Cluster: !ImportValue
+        'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+      TaskDefinition: !Ref PythonECSTaskDefinition
+      DesiredCount: 1
+      LaunchType: EC2
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 50
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups:
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSecurityGroup'
+          Subnets:
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSubnetA'
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSubnetB'
+            - !ImportValue
+              'Fn::Sub': '${NetworkStackName}-AppSubnetC'
+      LoadBalancers:
+        - ContainerName: fastapi-container
+          ContainerPort: 8000
+          TargetGroupArn: !Ref PythonTargetGroup
+      ServiceRegistries:
+        - RegistryArn: !GetAtt ServiceDiscoveryService.Arn
+
+  # ---------------------------------------------------------------------------
+  # Auto Scaling
+  # ---------------------------------------------------------------------------
+  PythonECSServiceScalingTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MinCapacity: !Ref ClusterMinSize
+      MaxCapacity: !Ref ClusterMaxSize
+      ResourceId: !Join
+        - /
+        - - service
+          - !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+          - !GetAtt PythonECSService.Name
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  PythonECSServiceScaleUpPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Environment}-scale-up'
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref PythonECSServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalLowerBound: 0
+            ScalingAdjustment: 1
+
+  PythonECSServiceScaleDownPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-${Environment}-scale-down'
+      PolicyType: StepScaling
+      ScalingTargetId: !Ref PythonECSServiceScalingTarget
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        Cooldown: 300
+        MetricAggregationType: Average
+        StepAdjustments:
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: -1
+
+  PythonECSServiceHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale up when CPU > 80%
+      AlarmActions: [!Ref PythonECSServiceScaleUpPolicy]
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+        - Name: ServiceName
+          Value: !GetAtt PythonECSService.Name
+
+  PythonECSServiceLowCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale down when CPU < 20% for 15 periods
+      AlarmActions: [!Ref PythonECSServiceScaleDownPolicy]
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 120
+      EvaluationPeriods: 15
+      Threshold: 20
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !ImportValue
+            'Fn::Sub': '${ClusterStackName}-ECSClusterId'
+        - Name: ServiceName
+          Value: !GetAtt PythonECSService.Name
+
+  # ---------------------------------------------------------------------------
+  # Route53 — api.octopodai.app → ALB
+  # ---------------------------------------------------------------------------
+  AppDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub '${ServiceDiscoveryName}.${DomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt PythonLoadBalancer.DNSName
+        EvaluateTargetHealth: false
+        HostedZoneId: !GetAtt PythonLoadBalancer.CanonicalHostedZoneID
+
+Outputs:
+
+  WildcardCertificateArn:
+    Description: ARN of the wildcard ACM certificate
+    Value: !Ref WildcardCertificate
+    Export:
+      Name: !Sub '${AWS::StackName}-WildcardCertArn'
+
+  PythonLoadBalancerDNSName:
+    Description: ALB DNS name
+    Value: !GetAtt PythonLoadBalancer.DNSName
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonLoadBalancerDNSName'
+
+  PythonLoadBalancerCanonicalHostedZoneID:
+    Description: ALB canonical hosted zone ID (for Route53 alias records)
+    Value: !GetAtt PythonLoadBalancer.CanonicalHostedZoneID
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonLoadBalancerCanonicalHostedZoneID'
+
+  PythonHTTPSListenerArn:
+    Description: ARN of the HTTPS listener
+    Value: !Ref PythonHTTPSLoadBalancerListener
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonHTTPSListenerArn'
+
+  PythonHTTPListenerArn:
+    Description: ARN of the HTTP listener
+    Value: !Ref PythonHTTPLoadBalancerListener
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonHTTPListenerArn'
+
+  PythonTargetGroupArn:
+    Description: ARN of the target group
+    Value: !Ref PythonTargetGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonTargetGroupArn'
+
+  PythonECSServiceName:
+    Description: ECS service name
+    Value: !GetAtt PythonECSService.Name
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonECSServiceName'
+
+  PythonECSExecutionRoleArn:
+    Description: ARN of the ECS execution role
+    Value: !GetAtt PythonECSExecutionRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonECSExecutionRoleArn'
+
+  PythonLogGroupName:
+    Description: CloudWatch log group name
+    Value: !Ref PythonLogGroup
+    Export:
+      Name: !Sub '${AWS::StackName}-PythonLogGroupName'
+
+  ExternalApiEndpoint:
+    Description: Public API URL
+    Value: !Sub 'https://${ServiceDiscoveryName}.${DomainName}'
+    Export:
+      Name: !Sub '${AWS::StackName}-ExternalApiEndpoint'
+
+  InternalApiEndpoint:
+    Description: VPC-internal service discovery DNS name
+    Value: !Sub '${ServiceDiscoveryName}.${ProjectName}-${Environment}.local'
+    Export:
+      Name: !Sub '${AWS::StackName}-InternalApiEndpoint'
