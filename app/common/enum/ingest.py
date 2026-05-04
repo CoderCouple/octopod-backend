@@ -22,6 +22,7 @@ class IngestJobType(str, Enum):
 class IngestJobStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"

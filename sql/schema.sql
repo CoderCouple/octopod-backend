@@ -341,6 +341,7 @@ CREATE TABLE IF NOT EXISTS ingest_job (
     job_type           VARCHAR(30) NOT NULL,
     platform           VARCHAR(30) NOT NULL,
     status             VARCHAR(30) NOT NULL DEFAULT 'pending',
+    control_signal     VARCHAR(10) NOT NULL DEFAULT 'none',
     trigger            VARCHAR(30) NOT NULL DEFAULT 'api',
     triggered_by       TEXT,
     execution_phase_id TEXT,

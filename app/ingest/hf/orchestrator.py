@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from app.common.enum.ingest import ControlSignal
 from app.ingest.common.errors import PermanentError, TransientError
 from app.ingest.common.job_tracker import JobTracker
 
@@ -48,6 +49,7 @@ class HFOrchestrator:
         self.storage = storage
         self.tracker = job_tracker
         self.stats = IngestStats()
+        self._cancelled = False
 
     async def run(self, usernames: Iterable[str]) -> IngestStats:
         queue: asyncio.Queue[str | None] = asyncio.Queue(
@@ -65,6 +67,9 @@ class HFOrchestrator:
             await queue.put(None)
         await asyncio.gather(*workers)
 
+        if self._cancelled and self.tracker:
+            await self.tracker.mark_cancelled()
+
         log.info("HF ingestion complete: %s", self.stats.summary())
         return self.stats
 
@@ -72,6 +77,8 @@ class HFOrchestrator:
         self, usernames: Iterable[str], queue: asyncio.Queue
     ) -> None:
         for u in usernames:
+            if self._cancelled:
+                return
             u = u.strip()
             if u:
                 await queue.put(u)
@@ -95,6 +102,24 @@ class HFOrchestrator:
                 self.stats.processed += 1
                 if self.stats.processed % 50 == 0:
                     log.info("Progress: %s", self.stats.summary())
+
+            # Check control signal after each item
+            if self.tracker:
+                signal = await self.tracker.check_control_signal()
+                if signal == ControlSignal.CANCEL:
+                    self._cancelled = True
+                    return
+                if signal == ControlSignal.PAUSE:
+                    await self.tracker.mark_paused()
+                    while True:
+                        await asyncio.sleep(5)
+                        signal = await self.tracker.check_control_signal()
+                        if signal == ControlSignal.CANCEL:
+                            self._cancelled = True
+                            return
+                        if signal == ControlSignal.NONE:
+                            await self.tracker.mark_resumed()
+                            break
 
     async def _process_one(self, username: str) -> None:
         if await self.storage.recently_ingested(

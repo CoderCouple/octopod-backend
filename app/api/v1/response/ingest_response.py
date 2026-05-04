@@ -102,6 +102,11 @@ class JobItem(BaseModel):
 # ---- Pipeline ----
 
 
+class JobControlResponse(BaseModel):
+    job_id: str
+    control_signal: str
+
+
 class PipelineStartedResponse(BaseModel):
     pipeline_type: str
     status: str = "started"

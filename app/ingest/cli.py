@@ -884,6 +884,73 @@ async def _pipeline_dependent(
         await pool.close()
 
 
+# ---- Job control commands (pause / resume / cancel) ----
+
+
+async def _job_pause(job_id: str) -> int:
+    import asyncpg
+
+    from app.common.enum.ingest import ControlSignal
+
+    from .common.job_tracker import JobTracker
+    from .gh.config import GHConfig
+
+    config = GHConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=1, max_size=2)
+    try:
+        ok = await JobTracker.set_control_signal(pool, job_id, ControlSignal.PAUSE)
+        if ok:
+            print(f"Pause signal sent to job {job_id}")
+            return 0
+        else:
+            print(f"Failed: job {job_id} not found or not in running/paused state")
+            return 1
+    finally:
+        await pool.close()
+
+
+async def _job_resume(job_id: str) -> int:
+    import asyncpg
+
+    from .common.job_tracker import JobTracker
+    from .gh.config import GHConfig
+
+    config = GHConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=1, max_size=2)
+    try:
+        ok = await JobTracker.resume_job(pool, job_id)
+        if ok:
+            print(f"Job {job_id} resumed")
+            return 0
+        else:
+            print(f"Failed: job {job_id} not found or not in paused state")
+            return 1
+    finally:
+        await pool.close()
+
+
+async def _job_cancel(job_id: str) -> int:
+    import asyncpg
+
+    from app.common.enum.ingest import ControlSignal
+
+    from .common.job_tracker import JobTracker
+    from .gh.config import GHConfig
+
+    config = GHConfig()
+    pool = await asyncpg.create_pool(config.db_dsn, min_size=1, max_size=2)
+    try:
+        ok = await JobTracker.set_control_signal(pool, job_id, ControlSignal.CANCEL)
+        if ok:
+            print(f"Cancel signal sent to job {job_id}")
+            return 0
+        else:
+            print(f"Failed: job {job_id} not found or not in running/paused state")
+            return 1
+    finally:
+        await pool.close()
+
+
 # ---- Status command ----
 
 
@@ -1115,6 +1182,14 @@ def main() -> int:
     p.add_argument("--language", action="append", default=[], dest="languages")
     p.add_argument("--topic", action="append", default=[], dest="topics")
 
+    # Job control
+    p = sub.add_parser("job-pause", help="Pause a running ingest job")
+    p.add_argument("job_id", help="Job ID (e.g. ij_abc123)")
+    p = sub.add_parser("job-resume", help="Resume a paused ingest job")
+    p.add_argument("job_id", help="Job ID (e.g. ij_abc123)")
+    p = sub.add_parser("job-cancel", help="Cancel a running/paused ingest job")
+    p.add_argument("job_id", help="Job ID (e.g. ij_abc123)")
+
     # Status
     sub.add_parser("status", help="Show checkpoint summary for all platforms")
 
@@ -1237,6 +1312,15 @@ def main() -> int:
             languages=args.languages or None,
             topics=args.topics or None,
         ))
+
+    if args.cmd == "job-pause":
+        return asyncio.run(_job_pause(args.job_id))
+
+    if args.cmd == "job-resume":
+        return asyncio.run(_job_resume(args.job_id))
+
+    if args.cmd == "job-cancel":
+        return asyncio.run(_job_cancel(args.job_id))
 
     if args.cmd == "status":
         return asyncio.run(_status())

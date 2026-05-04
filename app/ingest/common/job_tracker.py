@@ -12,6 +12,8 @@ from typing import Any
 
 import asyncpg
 
+from app.common.enum.ingest import ControlSignal
+
 log = logging.getLogger(__name__)
 
 
@@ -124,6 +126,103 @@ class JobTracker:
                 error[:1000],
                 json.dumps(error_detail) if error_detail else None,
             )
+
+    # ---- Control signal ----
+
+    async def check_control_signal(self) -> str:
+        if not self._job_id:
+            return ControlSignal.NONE
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT control_signal FROM ingest_job WHERE id = $1",
+                self._job_id,
+            )
+        return row["control_signal"] if row else ControlSignal.NONE
+
+    async def clear_control_signal(self) -> None:
+        if not self._job_id:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ingest_job
+                SET control_signal = $2, updated_at = now()
+                WHERE id = $1
+                """,
+                self._job_id,
+                ControlSignal.NONE,
+            )
+
+    async def mark_paused(self) -> None:
+        if not self._job_id:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ingest_job
+                SET status = 'paused', updated_at = now()
+                WHERE id = $1
+                """,
+                self._job_id,
+            )
+
+    async def mark_cancelled(self) -> None:
+        if not self._job_id:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ingest_job
+                SET status = 'cancelled',
+                    completed_at = now(),
+                    duration_ms = CASE WHEN started_at IS NOT NULL
+                        THEN EXTRACT(EPOCH FROM (now() - started_at))::int * 1000
+                        ELSE NULL END,
+                    updated_at = now()
+                WHERE id = $1
+                """,
+                self._job_id,
+            )
+
+    async def mark_resumed(self) -> None:
+        if not self._job_id:
+            return
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE ingest_job
+                SET status = 'running', control_signal = 'none', updated_at = now()
+                WHERE id = $1
+                """,
+                self._job_id,
+            )
+
+    @staticmethod
+    async def set_control_signal(pool: asyncpg.Pool, job_id: str, signal: str) -> bool:
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE ingest_job
+                SET control_signal = $2, updated_at = now()
+                WHERE id = $1 AND status IN ('running', 'paused')
+                """,
+                job_id,
+                signal,
+            )
+        return result != "UPDATE 0"
+
+    @staticmethod
+    async def resume_job(pool: asyncpg.Pool, job_id: str) -> bool:
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE ingest_job
+                SET status = 'running', control_signal = 'none', updated_at = now()
+                WHERE id = $1 AND status = 'paused'
+                """,
+                job_id,
+            )
+        return result != "UPDATE 0"
 
     # ---- Item lifecycle ----
 

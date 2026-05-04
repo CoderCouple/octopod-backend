@@ -1,4 +1,4 @@
-.PHONY: help install dev run test lint format clean migrate docker-up docker-down docker-build docker-logs docker-db gh-init-schema hf-init-schema gh-discover gh-ingest hf-discover hf-ingest ingest-status embed-profiles
+.PHONY: help install dev run test lint format clean migrate docker-up docker-down docker-build docker-logs docker-db gh-init-schema hf-init-schema gh-discover gh-ingest hf-discover hf-ingest ingest-status embed-profiles job-pause job-resume job-cancel
 
 help:
 	@echo "Available commands:"
@@ -100,6 +100,18 @@ hf-ingest:
 ingest-status:
 	poetry run python -m app.ingest.cli status
 
+job-pause:
+	@test -n "$(JOB_ID)" || (echo "Usage: make job-pause JOB_ID=ij_xxx" && exit 1)
+	poetry run python -m app.ingest.cli job-pause $(JOB_ID)
+
+job-resume:
+	@test -n "$(JOB_ID)" || (echo "Usage: make job-resume JOB_ID=ij_xxx" && exit 1)
+	poetry run python -m app.ingest.cli job-resume $(JOB_ID)
+
+job-cancel:
+	@test -n "$(JOB_ID)" || (echo "Usage: make job-cancel JOB_ID=ij_xxx" && exit 1)
+	poetry run python -m app.ingest.cli job-cancel $(JOB_ID)
+
 embed-profiles:
 	@echo "Triggering batch embedding of all profiles..."
 	curl -s -X POST "http://localhost:8000/api/v1/developer-profile/embed-all?force=true" | python -m json.tool
@@ -110,7 +122,7 @@ db-tunnel:
 	@echo "DataGrip: host=localhost port=5433 db=octopod_db user=dbadmin"
 	@echo "Press Ctrl+C to close tunnel"
 	aws ssm start-session \
-		--target i-03ce8fd4a1a4ca5e4 \
+		--target i-0d068f49ef729f538 \
 		--document-name AWS-StartPortForwardingSessionToRemoteHost \
 		--parameters '{"host":["octopodai-dev-postgress-db-stack-rdsdbinstance-rzqxkz9nu7pl.chq0wu4euqqh.us-west-2.rds.amazonaws.com"],"portNumber":["5432"],"localPortNumber":["5433"]}' \
 		--region us-west-2

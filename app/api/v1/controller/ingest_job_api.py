@@ -14,12 +14,13 @@ from app.api.v1.request.ingest_request import RetryRequest
 from app.api.v1.response.base_response import BaseResponse, error_response, success_response
 from app.api.v1.response.ingest_response import (
     IngestStatusResponse,
+    JobControlResponse,
     JobDetail,
     JobItem,
     JobSummary,
     RetryStartedResponse,
 )
-from app.common.enum.ingest import IngestJobType, IngestTrigger
+from app.common.enum.ingest import ControlSignal, IngestJobType, IngestTrigger
 from app.common.ingest_common import (
     _fetch_gh_user_data,
     _fetch_hf_user_data,
@@ -297,6 +298,114 @@ async def get_job_items(
         finally:
             await conn.close()
         return success_response([_serialize_row(dict(r)) for r in rows])
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+# ---- Job control endpoints (pause / resume / cancel) ----
+
+
+@router.post("/jobs/{job_id}/pause", response_model=BaseResponse[JobControlResponse])
+async def pause_job(job_id: str) -> BaseResponse:
+    from app.ingest.common.job_tracker import JobTracker
+
+    try:
+        conn = await asyncpg.connect(settings.asyncpg_dsn)
+        try:
+            row = await conn.fetchrow(
+                "SELECT id, status FROM ingest_job WHERE id = $1 AND is_deleted = FALSE",
+                job_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Job not found")
+            if row["status"] not in ("running",):
+                raise HTTPException(
+                    status_code=409, detail=f"Cannot pause job with status '{row['status']}'"
+                )
+        finally:
+            await conn.close()
+
+        pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+        try:
+            ok = await JobTracker.set_control_signal(pool, job_id, ControlSignal.PAUSE)
+        finally:
+            await pool.close()
+
+        if not ok:
+            raise HTTPException(status_code=409, detail="Failed to set pause signal")
+        return success_response({"job_id": job_id, "control_signal": "pause"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@router.post("/jobs/{job_id}/resume", response_model=BaseResponse[JobControlResponse])
+async def resume_job(job_id: str) -> BaseResponse:
+    from app.ingest.common.job_tracker import JobTracker
+
+    try:
+        conn = await asyncpg.connect(settings.asyncpg_dsn)
+        try:
+            row = await conn.fetchrow(
+                "SELECT id, status FROM ingest_job WHERE id = $1 AND is_deleted = FALSE",
+                job_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Job not found")
+            if row["status"] != "paused":
+                raise HTTPException(
+                    status_code=409, detail=f"Cannot resume job with status '{row['status']}'"
+                )
+        finally:
+            await conn.close()
+
+        pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+        try:
+            ok = await JobTracker.resume_job(pool, job_id)
+        finally:
+            await pool.close()
+
+        if not ok:
+            raise HTTPException(status_code=409, detail="Failed to resume job")
+        return success_response({"job_id": job_id, "control_signal": "none"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        return error_response(str(e), 500)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=BaseResponse[JobControlResponse])
+async def cancel_job(job_id: str) -> BaseResponse:
+    from app.ingest.common.job_tracker import JobTracker
+
+    try:
+        conn = await asyncpg.connect(settings.asyncpg_dsn)
+        try:
+            row = await conn.fetchrow(
+                "SELECT id, status FROM ingest_job WHERE id = $1 AND is_deleted = FALSE",
+                job_id,
+            )
+            if not row:
+                raise HTTPException(status_code=404, detail="Job not found")
+            if row["status"] not in ("running", "paused"):
+                raise HTTPException(
+                    status_code=409, detail=f"Cannot cancel job with status '{row['status']}'"
+                )
+        finally:
+            await conn.close()
+
+        pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+        try:
+            ok = await JobTracker.set_control_signal(pool, job_id, ControlSignal.CANCEL)
+        finally:
+            await pool.close()
+
+        if not ok:
+            raise HTTPException(status_code=409, detail="Failed to set cancel signal")
+        return success_response({"job_id": job_id, "control_signal": "cancel"})
     except HTTPException:
         raise
     except Exception as e:
