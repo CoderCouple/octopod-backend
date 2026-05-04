@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Secrets Manager secret for GitHub personal access tokens
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  GitHubTokens:
+    Description: Comma-separated GitHub personal access tokens
+    Type: String
+    NoEcho: true
+
+Resources:
+
+  GitHubTokensSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-github-tokens'
+      Description: GitHub personal access tokens for ingestion
+      SecretString: !Sub '{"tokens":"${GitHubTokens}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-github-tokens-secret
+
+Outputs:
+  GitHubTokensSecretArn:
+    Description: ARN of the Secrets Manager secret for GitHub tokens
+    Value: !Ref GitHubTokensSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubTokensSecretArn'
+
+  GitHubTokensSecretName:
+    Description: Name of the Secrets Manager secret
+    Value: !Sub '${ProjectName}-${Environment}-github-tokens'
+    Export:
+      Name: !Sub '${AWS::StackName}-GitHubTokensSecretName'

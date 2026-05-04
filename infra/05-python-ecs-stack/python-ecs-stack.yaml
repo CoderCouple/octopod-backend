@@ -35,6 +35,14 @@ Parameters:
     Type: String
     Default: octopodai-dev-opensearch-stack
     AllowedPattern: \S+
+  GitHubTokensStackName:
+    Type: String
+    Default: octopodai-dev-github-tokens-stack
+    AllowedPattern: \S+
+  HFTokensStackName:
+    Type: String
+    Default: octopodai-dev-hf-tokens-stack
+    AllowedPattern: \S+
   DomainName:
     Type: String
     Default: octopodai.app
@@ -109,6 +117,10 @@ Resources:
                     'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
                   - !ImportValue
                     'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${GitHubTokensStackName}-GitHubTokensSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
 
   # ---------------------------------------------------------------------------
   # IAM — Task Role (container runtime permissions)
@@ -147,6 +159,10 @@ Resources:
                     'Fn::Sub': '${QdrantStackName}-QdrantSecretArn'
                   - !ImportValue
                     'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${GitHubTokensStackName}-GitHubTokensSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
 
   # ---------------------------------------------------------------------------
   # CloudWatch Log Group
@@ -296,6 +312,18 @@ Resources:
                 - - !ImportValue
                       'Fn::Sub': '${OpenSearchStackName}-MasterSecretArn'
                   - ':password::'
+            - Name: GITHUB_TOKENS
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${GitHubTokensStackName}-GitHubTokensSecretArn'
+                  - ':tokens::'
+            - Name: HUGGINGFACE_TOKENS
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
+                  - ':tokens::'
 
           LogConfiguration:
             LogDriver: awslogs

@@ -1,0 +1,42 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Secrets Manager secret for HuggingFace access tokens
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  HuggingFaceTokens:
+    Description: Comma-separated HuggingFace access tokens
+    Type: String
+    NoEcho: true
+
+Resources:
+
+  HFTokensSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-hf-tokens'
+      Description: HuggingFace access tokens for ingestion
+      SecretString: !Sub '{"tokens":"${HuggingFaceTokens}"}'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-hf-tokens-secret
+
+Outputs:
+  HFTokensSecretArn:
+    Description: ARN of the Secrets Manager secret for HuggingFace tokens
+    Value: !Ref HFTokensSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-HFTokensSecretArn'
+
+  HFTokensSecretName:
+    Description: Name of the Secrets Manager secret
+    Value: !Sub '${ProjectName}-${Environment}-hf-tokens'
+    Export:
+      Name: !Sub '${AWS::StackName}-HFTokensSecretName'
