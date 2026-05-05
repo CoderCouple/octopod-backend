@@ -20,6 +20,7 @@ from app.ingest.common.errors import PermanentError, TransientError
 
 from .client import GitHubClient
 from .config import GHConfig
+from .storage import GHStorage
 
 log = logging.getLogger(__name__)
 
@@ -251,6 +252,8 @@ async def discover_top_users(
     min_repos: int | None = None,
     min_followers: int | None = None,
     org: str | None = None,
+    storage: GHStorage | None = None,
+    job_id: str | None = None,
 ) -> list[UserCandidate]:
     """Return the top-N users ranked by weighted followers+stars score."""
     from .token_pool import TokenPool
@@ -293,4 +296,20 @@ async def discover_top_users(
         log.info(
             "Discovered %d unique candidates; returning top %d", len(ranked), n
         )
-        return ranked[:n]
+        top = ranked[:n]
+
+        # Persist discovered users into gh_checkpoints
+        if storage:
+            source = "org_member" if org else "discover_api"
+            logins = [u.login for u in top]
+            await storage.bulk_mark_discovered(
+                logins, source=source, org_source=org, job_id=job_id
+            )
+            log.info("Persisted %d discovered users to gh_checkpoints", len(logins))
+
+            # Record org completion
+            if org:
+                await storage.mark_org_fetched(org, member_count=len(top), job_id=job_id)
+                log.info("Marked org '%s' as fetched (%d members)", org, len(top))
+
+        return top

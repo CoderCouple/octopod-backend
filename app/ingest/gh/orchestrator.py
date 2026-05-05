@@ -134,13 +134,14 @@ class GHOrchestrator:
         if self.tracker:
             await self.tracker.item_started(login)
 
+        job_id = self.tracker.job_id if self.tracker else None
+        await self.storage.mark_checkpoint(login, "ingesting", job_id=job_id)
+
         try:
             user = await self.client.fetch_user_bundle(login)
         except PermanentError as e:
             log.info("Permanent error for %s: %s", login, e)
-            await self.storage.mark_checkpoint(
-                login, "failed", str(e), job_id=self.tracker.job_id if self.tracker else None
-            )
+            await self.storage.mark_checkpoint(login, "failed", str(e), job_id=job_id)
             self.stats.permanent_errors += 1
             self.stats.failed += 1
             if self.tracker:
@@ -148,9 +149,7 @@ class GHOrchestrator:
             return
         except TransientError as e:
             log.warning("Transient error for %s: %s", login, e)
-            await self.storage.mark_checkpoint(
-                login, "pending", str(e), job_id=self.tracker.job_id if self.tracker else None
-            )
+            await self.storage.mark_checkpoint(login, "failed", str(e), job_id=job_id)
             self.stats.transient_errors += 1
             self.stats.failed += 1
             if self.tracker:
@@ -183,9 +182,7 @@ class GHOrchestrator:
         except (PermanentError, TransientError) as e:
             log.debug("Events fetch failed for %s: %s", login, e)
 
-        await self.storage.mark_checkpoint(
-            login, "success", job_id=self.tracker.job_id if self.tracker else None
-        )
+        await self.storage.mark_checkpoint(login, "ingested", job_id=job_id)
         self.stats.succeeded += 1
         if self.tracker:
             await self.tracker.item_completed(

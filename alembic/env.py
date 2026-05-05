@@ -12,10 +12,14 @@ sys.path.append(str(Path(__file__).parent.parent))
 from app.db.base import Base  # noqa: E402
 
 # Import all models so Base.metadata knows about them
-from app.model.aggregated_individual_profile_model import AggregatedIndividualProfile  # noqa: E402, F401
+from app.model.aggregated_individual_profile_model import (
+    AggregatedIndividualProfile,  # noqa: E402, F401
+)
 from app.model.campaign_recipient_model import CampaignRecipient  # noqa: E402, F401
 from app.model.campaign_step_model import CampaignStep  # noqa: E402, F401
-from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile  # noqa: E402, F401
+from app.model.cohesive_individual_profile_model import (
+    CohesiveIndividualProfile,  # noqa: E402, F401
+)
 from app.model.developer_profile_model import DeveloperProfile  # noqa: E402, F401
 from app.model.email_campaign_model import EmailCampaign  # noqa: E402, F401
 from app.model.email_event_model import EmailEvent  # noqa: E402, F401

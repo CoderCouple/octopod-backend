@@ -96,15 +96,27 @@ CREATE INDEX IF NOT EXISTS gh_events_type_idx ON gh_activity_events (type);
 
 CREATE TABLE IF NOT EXISTS gh_checkpoints (
     login         TEXT PRIMARY KEY,
-    status        TEXT NOT NULL DEFAULT 'pending',
+    status        TEXT NOT NULL DEFAULT 'discovered',
     last_attempt  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_success  TIMESTAMPTZ,
     last_error    TEXT,
     attempt_count INT NOT NULL DEFAULT 0,
-    last_job_id   TEXT
+    last_job_id   TEXT,
+    discovered_at TIMESTAMPTZ,
+    source        TEXT,
+    org_source    TEXT
 );
 
 CREATE INDEX IF NOT EXISTS gh_checkpoints_status_idx ON gh_checkpoints (status);
+
+CREATE TABLE IF NOT EXISTS gh_org_checkpoints (
+    org_login       TEXT PRIMARY KEY,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    member_count    INT,
+    discovered_at   TIMESTAMPTZ,
+    last_fetched_at TIMESTAMPTZ,
+    last_job_id     TEXT
+);
 
 
 -- ************************************************************

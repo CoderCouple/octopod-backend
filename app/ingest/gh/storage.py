@@ -296,12 +296,12 @@ class GHStorage:
                 """
                 INSERT INTO gh_checkpoints (login, status, last_attempt, last_success, last_error, attempt_count, last_job_id)
                 VALUES ($1, $2, NOW(),
-                        CASE WHEN $2 = 'success' THEN NOW() ELSE NULL END,
+                        CASE WHEN $2 = 'ingested' THEN NOW() ELSE NULL END,
                         $3, 1, $4)
                 ON CONFLICT (login) DO UPDATE SET
                     status = EXCLUDED.status,
                     last_attempt = NOW(),
-                    last_success = CASE WHEN EXCLUDED.status = 'success'
+                    last_success = CASE WHEN EXCLUDED.status = 'ingested'
                                         THEN NOW() ELSE gh_checkpoints.last_success END,
                     last_error = EXCLUDED.last_error,
                     attempt_count = gh_checkpoints.attempt_count + 1,
@@ -315,9 +315,61 @@ class GHStorage:
             row = await conn.fetchrow(
                 """
                 SELECT 1 FROM gh_checkpoints
-                WHERE login = $1 AND status = 'success'
+                WHERE login = $1 AND status = 'ingested'
                   AND last_success > NOW() - make_interval(hours => $2)
                 """,
                 login, within_hours,
+            )
+        return row is not None
+
+    async def bulk_mark_discovered(
+        self,
+        logins: list[str],
+        source: str,
+        org_source: str | None = None,
+        job_id: str | None = None,
+    ) -> int:
+        """Batch-insert discovered users. Skips any login that already exists."""
+        if not logins:
+            return 0
+        rows = [(login, source, org_source, job_id) for login in logins]
+        async with _timed("bulk_mark_discovered"):
+            async with self.pool.acquire() as conn:
+                await conn.executemany(
+                    """
+                    INSERT INTO gh_checkpoints (login, status, discovered_at, source, org_source, last_job_id)
+                    VALUES ($1, 'discovered', NOW(), $2, $3, $4)
+                    ON CONFLICT (login) DO NOTHING
+                    """,
+                    rows,
+                )
+        return len(logins)
+
+    async def mark_org_fetched(
+        self, org_login: str, member_count: int, job_id: str | None = None
+    ) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO gh_org_checkpoints (org_login, status, member_count, discovered_at, last_fetched_at, last_job_id)
+                VALUES ($1, 'fetched', $2, NOW(), NOW(), $3)
+                ON CONFLICT (org_login) DO UPDATE SET
+                    status = 'fetched',
+                    member_count = EXCLUDED.member_count,
+                    last_fetched_at = NOW(),
+                    last_job_id = EXCLUDED.last_job_id
+                """,
+                org_login, member_count, job_id,
+            )
+
+    async def is_org_fetched(self, org_login: str, within_hours: int) -> bool:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 1 FROM gh_org_checkpoints
+                WHERE org_login = $1 AND status = 'fetched'
+                  AND last_fetched_at > NOW() - make_interval(hours => $2)
+                """,
+                org_login, within_hours,
             )
         return row is not None

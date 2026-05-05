@@ -11,10 +11,8 @@ from unittest.mock import AsyncMock, patch
 
 import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
-
-from tests.conftest import FAKE_COGNITO_CLAIMS
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 # ---------------------------------------------------------------------------
 # RSA key pair helpers

@@ -8,15 +8,15 @@ Creates all tables from sql/schema.sql in a single migration.
 Uses CREATE TABLE IF NOT EXISTS so it is safe to run on existing databases.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "0001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 _SCHEMA_SQL = Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
 

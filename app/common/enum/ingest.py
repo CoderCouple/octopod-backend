@@ -1,6 +1,13 @@
 from enum import Enum
 
 
+class GHUserStatus(str, Enum):
+    DISCOVERED = "discovered"
+    INGESTING = "ingesting"
+    INGESTED = "ingested"
+    FAILED = "failed"
+
+
 class IngestJobType(str, Enum):
     GH_DISCOVER = "gh_discover"
     GH_INGEST = "gh_ingest"

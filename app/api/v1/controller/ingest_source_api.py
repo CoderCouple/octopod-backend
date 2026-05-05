@@ -10,7 +10,6 @@ from fastapi import APIRouter, BackgroundTasks
 
 from app.api.tags import Tags
 from app.api.v1.request.ingest_request import (
-    DiscoverRequest,
     GHDiscoverRequest,
     GHFilterRequest,
     HFDiscoverRequest,
@@ -51,18 +50,36 @@ async def gh_discover(
     finally:
         await pool.close()
 
+    # Check if org was recently fetched — skip if within refresh window
+    if req.org:
+        from app.ingest.gh.storage import GHStorage
+
+        check_storage = GHStorage(settings.asyncpg_dsn, pool_min=1, pool_max=2)
+        await check_storage.connect()
+        try:
+            if await check_storage.is_org_fetched(req.org, settings.gh_refresh_after_hours):
+                return success_response({
+                    "job_id": job_id,
+                    "status": "skipped",
+                    "message": f"org '{req.org}' already fetched within {settings.gh_refresh_after_hours}h refresh window",
+                })
+        finally:
+            await check_storage.close()
+
     async def _run_with_id() -> None:
         try:
             from app.ingest.common.job_tracker import JobTracker
             from app.ingest.gh.config import GHConfig
             from app.ingest.gh.discover import discover_top_users
+            from app.ingest.gh.storage import GHStorage
 
             config = GHConfig()
             config.validate()
 
-            pool = await asyncpg.create_pool(config.db_dsn, min_size=1, max_size=3)
+            storage = GHStorage(config.db_dsn, config.db_pool_min, config.db_pool_max)
+            await storage.connect()
             try:
-                tracker = JobTracker(pool, "github")
+                tracker = JobTracker(storage.pool, "github")
                 tracker._job_id = job_id
                 await tracker.mark_running()
 
@@ -70,6 +87,7 @@ async def gh_discover(
                     config, n=req.top, alpha=req.alpha,
                     org=req.org, languages=req.languages, topics=req.topics,
                     min_followers=req.min_followers, min_repos=req.min_repos,
+                    storage=storage, job_id=job_id,
                 )
                 await tracker.mark_completed({
                     "processed": len(ranked),
@@ -79,7 +97,7 @@ async def gh_discover(
                     "total": len(ranked),
                 })
             finally:
-                await pool.close()
+                await storage.close()
         except Exception as e:
             log.exception("gh-discover job %s failed", job_id)
             try:
