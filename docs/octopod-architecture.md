@@ -1,575 +1,705 @@
- Octopod Backend — Complete Codebase Overview
-                                                                                                                                                                                                       
-  High-Level Architecture
+Octopod Backend — Complete Codebase Overview
 
-  ┌────────────────────────────────────────────────────────────────────┐
-  │                        FastAPI Application                         │
-  │                         (app/main.py)                              │
-  ├─────────────┬──────────────┬──────────────┬────────────────────────┤
-  │  Middleware │   API Layer  │   Services   │   Background Tasks     │
-  │  ─────────  │   ─────────  │   ────────   │   ────────────────     │
-  │  • Auth     │  /api/v1/*   │  • Search    │  • Ingestion jobs      │
-  │  • CORS     │  33 ingest   │  • Profile   │  • Pipeline steps      │
-  │  • Logging  │  14 email    │  • Email     │  • Bridge sync         │
-  │             │  5 profile   │  • Ranking   │  • Identity resolution │
-  │             │  2 health    │              │  • Embedding           │
-  └─────────────┴──────────────┴──────────────┴────────────────────────┘
-           │                    │              │               
-      ┌────▼────┐          ┌────▼────┐   ┌─────▼─────┐
-      │PostgreSQL│         │ Qdrant  │   │OpenSearch │
-      │ (asyncpg)│         │(vectors)│   │ (keyword) │
-      └─────────┘          └─────────┘   └───────────┘
+ High-Level Architecture
 
-  Database Layer (PostgreSQL + Qdrant + OpenSearch)
+ ┌────────────────────────────────────────────────────────────────────┐
+ │                        FastAPI Application                         │
+ │                         (app/main.py)                              │
+ ├─────────────┬──────────────┬──────────────┬────────────────────────┤
+ │  Middleware │   API Layer  │   Services   │   Background Tasks     │
+ │  ─────────  │   ─────────  │   ────────   │   ────────────────     │
+ │  • CORS     │  /api/v1/*   │  • Search    │  • Ingestion jobs      │
+ │  • Logging  │  34 ingest   │  • Profile   │  • Pipeline steps      │
+ │             │  41 email    │  • Email     │  • Bridge sync         │
+ │  Auth:      │  10 profile  │  • Ranking   │  • Identity resolution │
+ │  Cognito    │  2 health    │              │  • Embedding           │
+ │  JWT/Bearer │              │              │                        │
+ └─────────────┴──────────────┴──────────────┴────────────────────────┘
+          │                    │              │
+     ┌────▼────┐          ┌────▼────┐   ┌─────▼─────┐
+     │PostgreSQL│         │ Qdrant  │   │OpenSearch │
+     │ (asyncpg)│         │(vectors)│   │ (keyword) │
+     └─────────┘          └─────────┘   └───────────┘
 
-  ┌── PostgreSQL  ──────────────────────────────────────────────────────┐
-  │                                                                     │
-  │  Raw Ingestion Tables          Bridge/Profile Tables                │
-  │  ────────────────────          ─────────────────────                │
-  │  • gh_users                    • developer_profile                  │
-  │  • gh_repos                    • merge_candidate                    │
-  │  • gh_contributions            • profile_embedding                  │
-  │  • hf_users                                                         │
-  │  • hf_models                   Job Tracking Tables                  │
-  │  • hf_datasets                 ───────────────────                  │
-  │  • ln_profiles                 • ingest_job                         │
-  │                                • ingest_job_item                    │
-  │  Email Tables                  • pipeline_execution                 │
-  │  ────────────                  • pipeline_step_execution            │
-  │  • mailbox                     • pipeline_schedule                  │
-  │  • email_template              • checkpoint                         │
-  │  • email_campaign                                                   │
-  │  • email_campaign_step         Search Tables                        │
-  │  • email_recipient             ────────────                         │
-  │  • email_send_log              • search_log                         │
-  │  • email_event                 • ranking_score                      │
-  │                                                                     │
-  └─────────────────────────────────────────────────────────────────────┘
+ Database Layer (PostgreSQL + Qdrant + OpenSearch)
 
-  ┌── Qdrant  ──────────────────────────────────────┐
-  │  Collection: developer_profiles                 │
-  │  • 384-dim vectors (MiniLM-L6-v2)               │
-  │  • payload: embedding_text + meta               │
-  └─────────────────────────────────────────────────┘
+ ┌── PostgreSQL  ──────────────────────────────────────────────────────┐
+ │                                                                     │
+ │  Raw Ingestion Tables          Bridge/Profile Tables                │
+ │  ────────────────────          ─────────────────────                │
+ │  • gh_users                    • developer_profile                  │
+ │  • gh_repositories             • social_profile                     │
+ │  • gh_commits                  • aggregated_individual_profile      │
+ │  • gh_activity_events          • cohesive_individual_profile        │
+ │  • hf_users                    • merge_candidate                    │
+ │  • hf_models                   • merge_audit_log                    │
+ │  • hf_datasets                 • profile_ranking                    │
+ │  • ln_users                                                         │
+ │  • ln_pending_urls             Job Tracking Tables                  │
+ │                                ───────────────────                  │
+ │  Email Tables                  • ingest_job                         │
+ │  ────────────                  • ingest_job_item                    │
+ │  • mailbox                     • pipeline_execution                 │
+ │  • email_template              • pipeline_execution_step            │
+ │  • email_campaign              • pipeline_schedule                  │
+ │  • campaign_step                                                    │
+ │  • campaign_recipient          Checkpoint Tables                    │
+ │  • email_message               ──────────────────                   │
+ │  • email_event                 • gh_checkpoints                     │
+ │  • email_unsubscribe           • hf_checkpoints                     │
+ │                                • ln_checkpoints                     │
+ │                                                                     │
+ └─────────────────────────────────────────────────────────────────────┘
 
-  ┌── OpenSearch  ──────────────────────────────────────────────────────┐
-  │  Index: developer_profiles                                          │
-  │  • Full-text search on bio, skills, repos, contributions            │
-  └─────────────────────────────────────────────────────────────────────┘
+ ┌── Qdrant  ──────────────────────────────────────┐
+ │  Collection: developer_profiles                 │
+ │  • 384-dim vectors (MiniLM-L6-v2)               │
+ │  • payload: embedding_text + meta               │
+ └─────────────────────────────────────────────────┘
 
-  Request Flow
+ ┌── OpenSearch  ──────────────────────────────────────────────────────┐
+ │  Index: octopod_profiles                                            │
+ │  • Full-text search on bio, skills, repos, contributions            │
+ └─────────────────────────────────────────────────────────────────────┘
 
-  Client Request
+ Request Flow
+
+ Client Request
+       │
+       ▼
+ ┌─────────────┐
+ │  Middleware │──► CORS ──► Logging
+ └──────┬──────┘
         │
         ▼
-  ┌─────────────┐
-  │  Middleware │──► CORS ──► Auth (API key check) ──► Logging
-  └──────┬──────┘
+ ┌─────────────┐     ┌──────────────────────────────────┐
+ │  Router     │────►│  app/api/v1/router.py            │
+ │  /api/v1    │     │  Includes all controller routers │
+ └──────┬──────┘     └──────────────────────────────────┘
+        │
+        │  Auth: Cognito JWT / HTTPBearer (RS256)
+        │  Applied per-endpoint via FastAPI Depends()
+        │  (app/common/auth/cognito.py)
+        │
+        ├──► /ingest/*         → 5 ingest controllers (34 endpoints)
+        ├──► /email/*          → 4 email controllers (36 endpoints)
+        ├──► /developer-profile/* → profile + search (10 endpoints)
+        └──► /health, /ready   → health checks (2 endpoints)
+               │
+               │  + 5 email tracking endpoints at root
+               │    (not under /api/v1 — short URLs)
+               ▼
+ ┌──────────────────┐      ┌──────────────┐
+ │  Request Model   │────►│  Controller  │
+ │  (Pydantic)      │     │  (endpoint)  │
+ └──────────────────┘      └──────┬───────┘
+                                 │
+                     ┌───────────┴───────────┐
+                     │                       │
+               Sync Response          Background Task
+               (immediate)            (job_id returned)
+                     │                       │
+                     ▼                       ▼
+            ┌──────────────┐      ┌──────────────────┐
+            │BaseResponse[T]│    │ asyncio.run(...) │
+            │{success,data} │    │ w/ JobTracker    │
+            └──────────────┘      └──────────────────┘
+
+ Ingestion Pipeline — The Core Flow
+
+                     ┌─────────────────────┐
+                     │   API Trigger        │
+                     │ POST /ingest/gh/run  │
+                     │ POST /ingest/hf/run  │
+                     │ POST /ingest/ln/run  │
+                     └──────────┬──────────┘
+                                │
+                                ▼
+                     ┌─────────────────────┐
+                     │   Job Created        │
+                     │   (ingest_job table) │
+                     │   Status: pending    │
+                     └──────────┬──────────┘
+                                │
+                     ┌──────────▼──────────┐
+                     │   BackgroundTask     │
+                     │   launched           │
+                     └──────────┬──────────┘
+                                │
+               ┌────────────────┼────────────────┐
+               ▼                ▼                 ▼
+     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+     │  GH Pipeline │  │  HF Pipeline │  │  LN Pipeline │
+     └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+            │                 │                  │
+            ▼                 ▼                  ▼
+     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+     │ Orchestrator │  │ Orchestrator │  │ Orchestrator │
+     │ (producer +  │  │ (semaphore   │  │ (Proxycurl   │
+     │  N workers)  │  │  concurrency)│  │  API client) │
+     └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+            │                 │                  │
+            ▼                 ▼                  ▼
+     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+     │ API Client   │  │ API Client   │  │ Proxycurl    │
+     │ (GitHub REST │  │ (HF Hub API) │  │ Client       │
+     │  + GraphQL)  │  │              │  │              │
+     └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+            │                 │                  │
+            ▼                 ▼                  ▼
+     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+     │   Storage    │  │   Storage    │  │   Storage    │
+     │ (PostgreSQL) │  │ (PostgreSQL) │  │ (PostgreSQL) │
+     └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+            │                 │                  │
+            └────────────┬────┘──────────────────┘
+                         │
+                         ▼
+              ┌─────────────────────────┐
+              │  Per-Platform Checkpoint│
+              │  • gh_checkpoints       │
+              │  • hf_checkpoints       │
+              │  • ln_checkpoints       │
+              │  (platform, login,      │
+              │   stage, status)        │
+              └─────────────────────────┘
+
+ GitHub Ingestion Detail
+
+ POST /ingest/gh/discover                 POST /ingest/gh/run
+         │                                        │
+         ▼                                        ▼
+ ┌───────────────┐                      ┌──────────────────┐
+ │ GHDiscover    │                      │ GHOrchestrator   │
+ │ • Search API  │                      │ • Producer task  │
+ │ • Stratified  │                      │   enqueues logins│
+ │   follower-   │                      │ • N worker tasks │
+ │   count bands │                      │   (default 8)    │
+ │   (50K+, 20K- │                      │ • asyncio.Queue  │
+ │   50K, etc.)  │                      └────────┬─────────┘
+ │ • Star-based  │                               │
+ │   repo ranges │               Per user (sequential within,
+ │   (100K+, 50K-│               concurrent across workers):
+ │   100K, etc.) │                               │
+ │ • Final score:│                      ┌────────▼────────┐
+ │   α×followers │                      │ 1. GraphQL call  │
+ │   +(1-α)×stars│                      │    (user bundle: │
+ │ • Saves to    │                      │    profile+repos │
+ │   checkpoint  │                      │    +commits)     │
+ └───────────────┘                      ├──────────────────┤
+                                        │ 2. Upsert user   │
+                                        ├──────────────────┤
+                                        │ 3. Filter repos   │
+                                        │    (skip forks    │
+                                        │    if configured) │
+                                        ├──────────────────┤
+                                        │ 4. Upsert repos   │
+                                        ├──────────────────┤
+                                        │ 5. Loop repos →   │
+                                        │    upsert commits │
+                                        ├──────────────────┤
+                                        │ 6. Fetch activity │
+                                        │    events (REST,  │
+                                        │    best-effort)   │
+                                        ├──────────────────┤
+                                        │ 7. Mark checkpoint│
+                                        └──────────────────┘
+
+                                        GH Storage writes:
+                                        • UPSERT gh_users
+                                        • UPSERT gh_repositories
+                                        • INSERT gh_commits
+                                        • INSERT gh_activity_events
+
+ Bridge Sync Pipeline (Raw → Unified Profile)
+
+ ┌─────────────────────────────────────────────────────────────────────┐
+ │                    POST /ingest/sync                                 │
+ │                    POST /ingest/pipeline/start                       │
+ └──────────────────────────┬──────────────────────────────────────────┘
+                            │
+                            ▼
+ ┌─────────────────────────────────────────────────────────────────────┐
+ │                    Bridge Sync Pipeline                               │
+ │                    (5-Layer Merge + Indexing Architecture)            │
+ │                                                                      │
+ │  Layer 1: IDENTITY RESOLUTION                                        │
+ │  ┌──────────────────────────────────────┐                           │
+ │  │  storage.upsert_developer_profile()  │                           │
+ │  │  • Find/create by github_username    │                           │
+ │  │    or huggingface_username           │                           │
+ │  │  • Returns canonical dp_id          │                           │
+ │  └──────────────────┬───────────────────┘                           │
+ │                     │                                                │
+ │  Layer 2: DOMAIN MERGE (two sub-layers)                              │
+ │  ┌──────────────────▼───────────────────┐                           │
+ │  │  2a: merge_dev_fields(gh, hf)        │                           │
+ │  │  • GH > HF for most text fields     │                           │
+ │  │  • Numeric fields summed             │                           │
+ │  │  → developer_profile table           │                           │
+ │  │  → merge_audit_log (tag: domain_dev) │                           │
+ │  ├──────────────────────────────────────┤                           │
+ │  │  2b: merge_social_fields(ln)         │                           │
+ │  │  • LinkedIn data → social_profile    │                           │
+ │  │  • Skipped if no LinkedIn data       │                           │
+ │  │  → social_profile table              │                           │
+ │  │  → merge_audit_log (tag: domain_soc) │                           │
+ │  └──────────────────┬───────────────────┘                           │
+ │                     │                                                │
+ │  Layer 3: AGGREGATION                                                │
+ │  ┌──────────────────▼───────────────────┐                           │
+ │  │  merge_aggregated_fields(dev, social)│                           │
+ │  │  • social wins: name, bio, company,  │                           │
+ │  │    location                          │                           │
+ │  │  • dev wins: avatar, website         │                           │
+ │  │  • Skills unioned                    │                           │
+ │  │  → aggregated_individual_profile     │                           │
+ │  │  → merge_audit_log (tag: aggregation)│                           │
+ │  └──────────────────┬───────────────────┘                           │
+ │                     │                                                │
+ │  Layer 4: COHESIVE ENRICHMENT                                        │
+ │  ┌──────────────────▼───────────────────┐                           │
+ │  │  merge_cohesive_fields(agg)          │                           │
+ │  │  • Copy aggregated fields            │                           │
+ │  │  • build_embedding_text() for vector │                           │
+ │  │    corpus string                     │                           │
+ │  │  → cohesive_individual_profile       │                           │
+ │  │  → merge_audit_log (tag: cohesive)   │                           │
+ │  └──────────────────┬───────────────────┘                           │
+ │                     │                                                │
+ │  Layer 5: INDEXING (optional)                                        │
+ │  ┌──────────────────▼───────────────────┐                           │
+ │  │  DualIndexer.index_profile()         │                           │
+ │  │  • Qdrant: 384-dim vector embedding  │                           │
+ │  │  • OpenSearch: full-text document    │                           │
+ │  │  Both indexed in parallel            │                           │
+ │  └──────────────────────────────────────┘                           │
+ │                                                                      │
+ │  Raw data sources:                                                   │
+ │  ┌──────────┐  ┌───────────┐  ┌──────────┐                         │
+ │  │ gh_users │  │ hf_users  │  │ ln_users │                          │
+ │  │ gh_repos │  │ hf_models │  │          │                          │
+ │  │ gh_commi │  │ hf_dataset│  │          │                          │
+ │  │ gh_activ │  │           │  │          │                          │
+ │  └──────────┘  └───────────┘  └──────────┘                          │
+ │                                                                      │
+ └─────────────────────────────────────────────────────────────────────┘
+
+ Identity Resolution
+
+ POST /ingest/identity/resolve
          │
          ▼
-  ┌─────────────┐     ┌──────────────────────────────────┐
-  │  Router     │────►│  app/api/v1/router.py            │
-  │  /api/v1    │     │  Includes all controller routers │
-  └──────┬──────┘     └──────────────────────────────────┘
+ ┌───────────────────────────────────────┐
+ │  IdentityResolver.run()               │
+ │                                       │
+ │  Step 1: Build Blocking Pairs         │
+ │  ┌───────────────────────────────┐    │
+ │  │ Group profiles by:            │    │
+ │  │ • Shared email domain         │    │
+ │  │ • Similar display names       │    │
+ │  │ • Overlapping organizations   │    │
+ │  │ • NAME_BLOCK_CAP = 50         │    │
+ │  │   (max profiles per block)    │    │
+ │  │ → Candidate pairs             │    │
+ │  └──────────────┬────────────────┘    │
+ │                 │                      │
+ │  Step 2: Score Each Pair              │
+ │  ┌──────────────▼────────────────┐    │
+ │  │ Signal scoring (max wins):    │    │
+ │  │ • hf_github_exact     (1.0)   │    │
+ │  │ • email_exact          (0.9)  │    │
+ │  │ • twitter_exact        (0.85) │    │
+ │  │ • website_crossref     (0.8)  │    │
+ │  │ • linkedin_url_match   (0.75) │    │
+ │  │ • avatar_gravatar_match(0.7)  │    │
+ │  │ • name_location_exact  (0.6)  │    │
+ │  │ • name_company_fuzzy   (0.55) │    │
+ │  │   (Jaro-Winkler ≥0.9 + co.)  │    │
+ │  │ • name_fuzzy_alone     (0.3)  │    │
+ │  │   (Jaro-Winkler ≥0.9 only)   │    │
+ │  │ → score = max(signal_weight)  │    │
+ │  └──────────────┬────────────────┘    │
+ │                 │                      │
+ │  Step 3: Decide                       │
+ │  ┌──────────────▼────────────────┐    │
+ │  │ score >= 0.7  → AUTO-MERGE    │    │
+ │  │ score >= 0.4  → PENDING review│    │
+ │  │ score <  0.4  → SKIP          │    │
+ │  └──────────────┬────────────────┘    │
+ │                 │                      │
+ │                 ▼                      │
+ │  ┌───────────────────────────────┐    │
+ │  │ merge_candidate table         │    │
+ │  │ Status: pending | merged |    │    │
+ │  │         approved | rejected   │    │
+ │  └───────────────────────────────┘    │
+ └───────────────────────────────────────┘
+
+ Manual Review Flow:
+ GET  /identity/candidates          → List candidates
+ GET  /identity/candidates/{id}     → Detail + both profiles
+ POST /identity/candidates/{id}/approve → Merge profiles
+ POST /identity/candidates/{id}/reject  → Reject match
+
+ Pipeline Orchestration System
+
+ POST /ingest/pipeline/start
+      { pipeline_type: "daily" | "weekly" | "seed" | "dependent" | ... }
          │
-         ├──► /ingest/*      → 5 ingest controllers (33 endpoints)
-         ├──► /email/*       → 5 email controllers (14 endpoints)
-         ├──► /developers/*  → profile + search (5 endpoints)
-         └──► /health, /ready → health checks
-                │
-                ▼
-  ┌──────────────────┐     ┌──────────────┐
-  │  Request Model   │────►│  Controller  │
-  │  (Pydantic)      │     │  (endpoint)  │
-  └──────────────────┘     └──────┬───────┘
-                                  │
-                      ┌───────────┴───────────┐
-                      │                       │
-                Sync Response          Background Task
-                (immediate)            (job_id returned)
-                      │                       │
-                      ▼                       ▼
-             ┌──────────────┐      ┌──────────────────┐
-             │BaseResponse[T]│      │ asyncio.run(...)  │
-             │{success,data} │      │ w/ JobTracker     │
-             └──────────────┘      └──────────────────┘
+         ▼
+ ┌───────────────────────────────────────────────────────┐
+ │  PipelineRunner                                        │
+ │                                                        │
+ │  pipeline_execution table (tracks overall run)         │
+ │  pipeline_execution_step table (tracks each step)      │
+ │                                                        │
+ │  Daily Pipeline Steps:                                 │
+ │  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐           │
+ │  │GH   │─►│GH   │─►│HF   │─►│HF   │─►│Ident│           │
+ │  │Disc.│  │Ingest│ │Disc.│  │Ingest│ │Reslv│           │
+ │  └─────┘  └─────┘  └─────┘  └─────┘  └──┬──┘           │
+ │                                           │           │
+ │                                    ┌──────▼─────┐     │
+ │                                    │Bridge│─►│Embed│  │
+ │                                    │Sync  │  │     │  │
+ │                                    └──────┘  └─────┘  │
+ │                                                        │
+ │  Control Signals:                                      │
+ │  • PAUSE  → stops after current step completes         │
+ │  • RESUME → continues from paused step                 │
+ │  • CANCEL → marks execution as cancelled               │
+ │  • RERUN  → creates new execution copying config       │
+ │                                                        │
+ │  Pipeline Types:                                       │
+ │  • daily     = GH discover → GH ingest →               │
+ │                HF discover → HF ingest →               │
+ │                identity resolve → bridge sync → embed   │
+ │  • weekly    = LN discover → LN ingest →               │
+ │                bridge sync → embed                      │
+ │  • seed      = GH discover → GH ingest →               │
+ │                bridge sync → embed                      │
+ │  • dependent = GH discover → GH ingest →               │
+ │                HF crossref → HF ingest →               │
+ │                identity resolve →                       │
+ │                LN crossref → LN ingest →               │
+ │                bridge sync → embed                      │
+ │  • gh_only   = GH discover → GH ingest                 │
+ │  • hf_only   = HF discover → HF ingest                 │
+ │  • ln_only   = LN discover → LN ingest                 │
+ └───────────────────────────────────────────────────────┘
 
-  Ingestion Pipeline — The Core Flow
+ Developer Search Flow
 
-                      ┌─────────────────────┐
-                      │   API Trigger        │
-                      │ POST /ingest/gh/run  │
-                      │ POST /ingest/hf/run  │
-                      │ POST /ingest/ln/run  │
-                      └──────────┬──────────┘
-                                 │
-                                 ▼
-                      ┌─────────────────────┐
-                      │   Job Created        │
-                      │   (ingest_job table) │
-                      │   Status: pending    │
-                      └──────────┬──────────┘
-                                 │
-                      ┌──────────▼──────────┐
-                      │   BackgroundTask     │
-                      │   launched           │
-                      └──────────┬──────────┘
-                                 │
-                ┌────────────────┼────────────────┐
-                ▼                ▼                 ▼
-      ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-      │  GH Pipeline │  │  HF Pipeline │  │  LN Pipeline │
-      └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-             │                 │                  │
-             ▼                 ▼                  ▼
-      ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-      │ Orchestrator │  │ Orchestrator │  │ Orchestrator │
-      │ (semaphore   │  │ (semaphore   │  │ (Proxycurl   │
-      │  concurrency)│  │  concurrency)│  │  API client) │
-      └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-             │                 │                  │
-             ▼                 ▼                  ▼
-      ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-      │ API Client   │  │ API Client   │  │ Proxycurl    │
-      │ (GitHub REST │  │ (HF Hub API) │  │ Client       │
-      │  + GraphQL)  │  │              │  │              │
-      └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-             │                 │                  │
-             ▼                 ▼                  ▼
-      ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-      │   Storage    │  │   Storage    │  │   Storage    │
-      │ (PostgreSQL) │  │ (PostgreSQL) │  │ (PostgreSQL) │
-      │              │  │              │  │              │
-      └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
-             │                 │                  │
-             └────────────┬────┘──────────────────┘
-                          │
-                          ▼
-               ┌─────────────────────┐
-               │   Checkpoint        │
-               │   (platform, login, │
-               │    stage, status)   │
-               └─────────────────────┘
+ POST /developer-profile/search { query: "machine learning Python" }
+         │
+         ▼
+ ┌───────────────────────────────────────────────────────┐
+ │  ProfileSearchService                                  │
+ │                                                        │
+ │  ┌─────────────────────┐  ┌─────────────────────┐    │
+ │  │  Qdrant Vector      │  │  OpenSearch Keyword  │    │
+ │  │  Search             │  │  Search              │    │
+ │  │                     │  │                      │    │
+ │  │  query → embed      │  │  query → BM25        │    │
+ │  │  → cosine similarity│  │  → full-text match   │    │
+ │  │  → top K results    │  │  → top K results     │    │
+ │  └──────────┬──────────┘  └──────────┬───────────┘    │
+ │             │                        │                 │
+ │             └────────┬───────────────┘                 │
+ │                      ▼                                 │
+ │  ┌─────────────────────────────────────────────┐      │
+ │  │  Reciprocal Rank Fusion (RRF)               │      │
+ │  │                                              │      │
+ │  │  For each result in both lists:              │      │
+ │  │  score = Σ 1/(k + rank_i)                   │      │
+ │  │  where k = 60 (constant)                    │      │
+ │  │                                              │      │
+ │  │  Merges both result sets by fused score      │      │
+ │  └──────────────────┬──────────────────────────┘      │
+ │                     │                                  │
+ │                     ▼                                  │
+ │  ┌─────────────────────────────────────────────┐      │
+ │  │  Cross-Encoder Reranking (optional)         │      │
+ │  │  • Takes top N fused results                │      │
+ │  │  • Scores (query, profile_text) pairs       │      │
+ │  │  • Re-sorts by cross-encoder score          │      │
+ │  └──────────────────┬──────────────────────────┘      │
+ │                     │                                  │
+ │                     ▼                                  │
+ │  ┌─────────────────────────────────────────────┐      │
+ │  │  Return ranked developer profiles           │      │
+ │  └─────────────────────────────────────────────┘      │
+ └───────────────────────────────────────────────────────┘
 
-  GitHub Ingestion Detail
+ Email Outreach System
 
-  POST /ingest/gh/discover                 POST /ingest/gh/run
-          │                                        │
-          ▼                                        ▼
-  ┌───────────────┐                      ┌──────────────────┐
-  │ GHDiscover    │                      │ GHOrchestrator   │
-  │ • Search API  │                      │ • Semaphore(N)   │
-  │ • star-based  │                      │ • Per-user tasks │
-  │   ranges      │                      └────────┬─────────┘
-  │ • Saves to    │                               │
-  │   checkpoint  │                    Per user (concurrent):
-  └───────────────┘                               │
-                                      ┌───────────┼───────────┐
-                                      ▼           ▼           ▼
-                                 ┌─────────┐ ┌────────┐ ┌─────────┐
-                                 │ Profile │ │ Repos  │ │Contribs │
-                                 │ fetch   │ │ fetch  │ │ fetch   │
-                                 └────┬────┘ └───┬────┘ └────┬────┘
-                                      │          │           │
-                                      └──────────┼───────────┘
-                                                 ▼
-                                      ┌─────────────────────┐
-                                      │  GHStorage           │
-                                      │  • UPSERT gh_users   │
-                                      │  • UPSERT gh_repos   │
-                                      │  • INSERT gh_contribs│
-                                      │  • SAVE gh_readmes   │
-                                      └─────────────────────┘
+ ┌─────────────────────────────────────────────────────────────────────┐
+ │                     Email Outreach Flow                               │
+ │                                                                      │
+ │  1. SETUP                                                            │
+ │  ┌──────────────┐  ┌──────────────────┐  ┌────────────────┐        │
+ │  │ Mailbox      │  │ Email Template   │  │ Campaign       │        │
+ │  │ (OAuth creds)│  │ (Jinja2 body,    │  │ (multi-step    │        │
+ │  │ IMAP/SMTP    │  │  subject, vars)  │  │  sequences)    │        │
+ │  └──────┬───────┘  └────────┬─────────┘  └───────┬────────┘        │
+ │         │                   │                     │                  │
+ │  2. CAMPAIGN CONFIGURATION                                           │
+ │  ┌──────▼───────────────────▼─────────────────────▼────────┐        │
+ │  │  Campaign Steps (campaign_step table)                    │        │
+ │  │  ┌────────┐    ┌────────┐    ┌────────┐                │        │
+ │  │  │ Step 1 │───►│ Step 2 │───►│ Step 3 │                │        │
+ │  │  │Day 0   │    │Day 3   │    │Day 7   │                │        │
+ │  │  │Template │    │Template│    │Template│                │        │
+ │  │  │   A    │    │   B    │    │   C    │                │        │
+ │  │  └────────┘    └────────┘    └────────┘                │        │
+ │  └─────────────────────────┬────────────────────────────────┘        │
+ │                            │                                         │
+ │  3. RECIPIENTS                                                       │
+ │  ┌─────────────────────────▼────────────────────────────────┐        │
+ │  │  campaign_recipient table                                 │        │
+ │  │  • developer_profile_id → enriched email                 │        │
+ │  │  • status: pending → sent → replied | bounced           │        │
+ │  │  • current_step tracking                                 │        │
+ │  └─────────────────────────┬────────────────────────────────┘        │
+ │                            │                                         │
+ │  4. SENDING                                                          │
+ │  ┌─────────────────────────▼────────────────────────────────┐        │
+ │  │  EmailSender                                              │        │
+ │  │  • Render template with recipient vars                   │        │
+ │  │  • Inject tracking pixel (1x1 transparent PNG)           │        │
+ │  │  • Send via SMTP through mailbox                         │        │
+ │  │  • Log to email_message table                            │        │
+ │  └─────────────────────────┬────────────────────────────────┘        │
+ │                            │                                         │
+ │  5. TRACKING                                                         │
+ │  ┌─────────────────────────▼────────────────────────────────┐        │
+ │  │  Events tracked:                                         │        │
+ │  │  • open (tracking pixel loaded)                          │        │
+ │  │  • click (redirect link clicked)                         │        │
+ │  │  • reply (IMAP inbox check)                              │        │
+ │  │  • bounce (delivery failure)                             │        │
+ │  │  • unsubscribe                                           │        │
+ │  │  → email_event table                                     │        │
+ │  │  → email_unsubscribe table                               │        │
+ │  └──────────────────────────────────────────────────────────┘        │
+ │                                                                      │
+ └─────────────────────────────────────────────────────────────────────┘
 
-  Bridge Sync Pipeline (Raw → Unified Profile)
+ Embedding Generation Flow
 
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │                    POST /ingest/sync                                 │
-  │                    POST /ingest/pipeline/start                       │
-  └──────────────────────────┬──────────────────────────────────────────┘
-                             │
-                             ▼
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │                    Bridge Sync Pipeline                               │
-  │                    (4-Layer Merge Architecture)                       │
-  │                                                                      │
-  │  Layer 1: RAW EXTRACTION                                             │
-  │  ┌──────────┐  ┌───────────┐  ┌──────────┐                         │
-  │  │ gh_users │  │ hf_users  │  │ln_profiles│                         │
-  │  │ gh_repos │  │ hf_models │  │          │                          │
-  │  │ gh_contri│  │ hf_dataset│  │          │                          │
-  │  └────┬─────┘  └─────┬─────┘  └────┬─────┘                         │
-  │       │              │              │                                │
-  │       ▼              ▼              ▼                                │
-  │  Layer 2: DOMAIN PROFILES                                            │
-  │  ┌──────────────────────────────────────┐                           │
-  │  │  BridgeSync.sync_profiles()          │                           │
-  │  │  • For each raw user:                │                           │
-  │  │    - Find/create developer_profile   │                           │
-  │  │    - Match by email → username → name│                           │
-  │  │    - Aggregate repos, stars, models  │                           │
-  │  │    - Compute skills from repos/models│                           │
-  │  └──────────────────┬───────────────────┘                           │
-  │                     │                                                │
-  │                     ▼                                                │
-  │  Layer 3: UNIFIED PROFILE                                            │
-  │  ┌──────────────────────────────────────┐                           │
-  │  │  developer_profile table             │                           │
-  │  │  • github_username                   │                           │
-  │  │  • huggingface_username              │                           │
-  │  │  • display_name, email, company      │                           │
-  │  │  • total_repos, total_stars          │                           │
-  │  │  • total_hf_models, total_hf_dls    │                           │
-  │  │  • top_languages (JSONB)             │                           │
-  │  │  • embedding_text (generated)        │                           │
-  │  └──────────────────┬───────────────────┘                           │
-  │                     │                                                │
-  │                     ▼                                                │
-  │  Layer 4: SEARCH INDEX                                               │
-  │  ┌──────────────────────────────────────┐                           │
-  │  │  DualIndexer                         │                           │
-  │  │  • Qdrant: 384-dim vector embedding  │                           │
-  │  │  • OpenSearch: full-text document    │                           │
-  │  │  Both indexed in parallel            │                           │
-  │  └──────────────────────────────────────┘                           │
-  │                                                                      │
-  └─────────────────────────────────────────────────────────────────────┘
+ POST /ingest/embed
+         │
+         ▼
+ ┌───────────────────────────────────────────────┐
+ │  BatchEmbedder                                 │
+ │                                                │
+ │  1. Query profiles needing embeddings          │
+ │     (new or updated since last embed)          │
+ │                                                │
+ │  2. For each profile:                          │
+ │     ┌────────────────────────────────────┐     │
+ │     │ Build embedding_text:              │     │
+ │     │ "{name} | {bio} | Skills: {langs} │     │
+ │     │  | Repos: {top_repos} | {company} │     │
+ │     │  | {location}"                     │     │
+ │     └──────────────┬─────────────────────┘     │
+ │                    │                           │
+ │  3. Batch encode   │                           │
+ │     ┌──────────────▼─────────────────────┐     │
+ │     │ SentenceTransformer                │     │
+ │     │ model: all-MiniLM-L6-v2           │     │
+ │     │ → 384-dimensional vectors          │     │
+ │     └──────────────┬─────────────────────┘     │
+ │                    │                           │
+ │  4. Dual index     │                           │
+ │     ┌──────────────▼─────────────────────┐     │
+ │     │ DualIndexer                        │     │
+ │     │ ├─► Qdrant: upsert vector + payload│     │
+ │     │ └─► OpenSearch: index document     │     │
+ │     └────────────────────────────────────┘     │
+ └───────────────────────────────────────────────┘
 
-  Identity Resolution
+ API Endpoint Map (87 total)
 
-  POST /ingest/identity/resolve
-          │
-          ▼
-  ┌───────────────────────────────────────┐
-  │  IdentityResolver.run()               │
-  │                                       │
-  │  Step 1: Build Blocking Pairs         │
-  │  ┌───────────────────────────────┐    │
-  │  │ Group profiles by:            │    │
-  │  │ • Shared email domain         │    │
-  │  │ • Similar display names       │    │
-  │  │ • Overlapping organizations   │    │
-  │  │ → Candidate pairs             │    │
-  │  └──────────────┬────────────────┘    │
-  │                 │                      │
-  │  Step 2: Score Each Pair              │
-  │  ┌──────────────▼────────────────┐    │
-  │  │ Signal scoring (0-1):         │    │
-  │  │ • Email match      (0.4)      │    │
-  │  │ • Name similarity  (0.25)     │    │
-  │  │ • Company match    (0.15)     │    │
-  │  │ • Location match   (0.1)      │    │
-  │  │ • Avatar match     (0.1)      │    │
-  │  │ → confidence_score            │    │
-  │  └──────────────┬────────────────┘    │
-  │                 │                      │
-  │  Step 3: Decide                       │
-  │  ┌──────────────▼────────────────┐    │
-  │  │ score >= 0.85 → AUTO-MERGE    │    │
-  │  │ score >= 0.50 → PENDING review│    │
-  │  │ score <  0.50 → SKIP          │    │
-  │  └──────────────┬────────────────┘    │
-  │                 │                      │
-  │                 ▼                      │
-  │  ┌───────────────────────────────┐    │
-  │  │ merge_candidate table         │    │
-  │  │ Status: pending | merged |    │    │
-  │  │         approved | rejected   │    │
-  │  └───────────────────────────────┘    │
-  └───────────────────────────────────────┘
+ /api/v1/
+ ├── health/
+ │   ├── GET  /health              → liveness check
+ │   └── GET  /ready               → readiness check
+ │
+ ├── ingest/                        (34 endpoints — 5 controllers)
+ │   ├── source/                    (7 endpoints)
+ │   │   ├── POST /gh/discover     → discover GitHub users
+ │   │   ├── POST /gh/run          → ingest GitHub profiles
+ │   │   ├── POST /gh/filter       → query ingested users by filters
+ │   │   ├── POST /hf/discover     → discover HuggingFace authors
+ │   │   ├── POST /hf/run          → ingest HuggingFace profiles
+ │   │   ├── POST /ln/discover     → extract LinkedIn URLs
+ │   │   └── POST /ln/run          → ingest LinkedIn profiles
+ │   │
+ │   ├── jobs/                      (7 endpoints)
+ │   │   ├── GET  /status          → checkpoint summary
+ │   │   ├── POST /retry           → retry failed items
+ │   │   ├── GET  /jobs            → list jobs (filterable)
+ │   │   ├── GET  /jobs/{id}       → job detail + counts
+ │   │   ├── GET  /jobs/{id}/items → job item list
+ │   │   ├── GET  /jobs/{id}/data  → ingested data for job
+ │   │   └── GET  /jobs/{id}/data/{login} → single user data
+ │   │
+ │   ├── pipeline/                  (10 endpoints)
+ │   │   ├── POST /sync            → trigger bridge sync
+ │   │   ├── POST /embed           → trigger batch embedding
+ │   │   ├── POST /pipeline/start  → start pipeline
+ │   │   ├── GET  /pipeline/active → list active pipelines
+ │   │   ├── GET  /pipeline/{id}   → execution detail
+ │   │   ├── POST /pipeline/{id}/pause
+ │   │   ├── POST /pipeline/{id}/resume
+ │   │   ├── POST /pipeline/{id}/cancel
+ │   │   ├── POST /pipeline/{id}/rerun
+ │   │   └── GET  /pipeline/status → health dashboard
+ │   │
+ │   ├── schedule/                  (4 endpoints)
+ │   │   ├── POST /schedule        → create schedule
+ │   │   ├── GET  /schedules       → list schedules
+ │   │   ├── PUT  /schedule/{id}   → update schedule
+ │   │   └── DELETE /schedule/{id} → delete schedule
+ │   │
+ │   └── identity/                  (6 endpoints)
+ │       ├── GET  /identity/candidates
+ │       ├── GET  /identity/candidates/{id}
+ │       ├── POST /identity/candidates/{id}/approve
+ │       ├── POST /identity/candidates/{id}/reject
+ │       ├── POST /identity/resolve
+ │       └── GET  /identity/stats
+ │
+ ├── email/                         (36 endpoints — 4 controllers under /api/v1)
+ │   ├── mailbox/                   (8 endpoints)
+ │   │   ├── POST /gmail/connect   → connect Gmail via OAuth
+ │   │   ├── POST /outlook/connect → connect Outlook via OAuth
+ │   │   ├── POST /smtp/connect    → connect via SMTP credentials
+ │   │   ├── GET  /                → list mailboxes
+ │   │   ├── GET  /{id}            → mailbox detail
+ │   │   ├── PATCH /{id}           → update mailbox
+ │   │   ├── DELETE /{id}          → delete mailbox
+ │   │   └── POST /{id}/test       → test connection
+ │   │
+ │   ├── templates/                 (6 endpoints)
+ │   │   ├── POST /                → create template
+ │   │   ├── GET  /                → list templates
+ │   │   ├── GET  /{id}            → template detail
+ │   │   ├── PATCH /{id}           → update template
+ │   │   ├── DELETE /{id}          → delete template
+ │   │   └── POST /{id}/preview    → render preview
+ │   │
+ │   ├── campaigns/                 (19 endpoints)
+ │   │   ├── POST /                → create campaign
+ │   │   ├── GET  /                → list campaigns
+ │   │   ├── GET  /{id}            → campaign detail
+ │   │   ├── PATCH /{id}           → update campaign
+ │   │   ├── DELETE /{id}          → delete campaign
+ │   │   ├── POST /{id}/start      → launch sending
+ │   │   ├── POST /{id}/pause      → pause campaign
+ │   │   ├── POST /{id}/resume     → resume campaign
+ │   │   ├── POST /{id}/cancel     → cancel campaign
+ │   │   ├── POST /{id}/steps      → add campaign step
+ │   │   ├── GET  /{id}/steps      → list steps
+ │   │   ├── PATCH /steps/{sid}    → update step
+ │   │   ├── DELETE /steps/{sid}   → delete step
+ │   │   ├── POST /{id}/recipients → add recipients
+ │   │   ├── GET  /{id}/recipients → list recipients
+ │   │   ├── DELETE /recipients/{rid} → remove recipient
+ │   │   ├── POST /{id}/recipients/from-search → add from search
+ │   │   ├── GET  /{id}/analytics  → campaign analytics
+ │   │   └── GET  /{id}/messages   → sent messages
+ │   │
+ │   └── enrichment/                (3 endpoints)
+ │       ├── POST /{profile_id}    → enrich single profile
+ │       ├── POST /batch           → enrich batch
+ │       └── GET  /{profile_id}    → get enrichment results
+ │
+ └── developer-profile/             (10 endpoints)
+     ├── POST /                    → create profile
+     ├── GET  /                    → list profiles
+     ├── GET  /{id}                → profile detail
+     ├── PATCH /{id}               → update profile
+     ├── GET  /{id}/cohesive       → cohesive profile view
+     ├── POST /{id}/merge          → merge two profiles
+     ├── GET  /{id}/ranking        → profile ranking
+     ├── POST /rank                → compute rankings
+     ├── POST /search              → hybrid search
+     └── POST /embed-all           → batch embed all profiles
 
-  Manual Review Flow:
-  GET  /identity/candidates          → List candidates
-  GET  /identity/candidates/{id}     → Detail + both profiles
-  POST /identity/candidates/{id}/approve → Merge profiles
-  POST /identity/candidates/{id}/reject  → Reject match
+ Tracking endpoints (mounted at root, NOT under /api/v1 — short URLs):
+ ├── GET  /t/{tracking_id}.png     → open tracking pixel
+ ├── GET  /c/{tracking_id}/{link_id} → click redirect
+ ├── GET  /unsub/{tracking_id}     → unsubscribe
+ ├── POST /webhooks/sendgrid       → SendGrid event webhook
+ └── POST /webhooks/gmail          → Gmail push notification webhook
 
-  Pipeline Orchestration System
+ File Structure (Controller Layer)
 
-  POST /ingest/pipeline/start
-       { pipeline_type: "full_github" | "full_huggingface" | "full" | ... }
-          │
-          ▼
-  ┌───────────────────────────────────────────────────────┐
-  │  PipelineRunner                                        │
-  │                                                        │
-  │  pipeline_execution table (tracks overall run)         │
-  │  pipeline_step_execution table (tracks each step)      │
-  │                                                        │
-  │  Full Pipeline Steps:                                  │
-  │  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐       │
-  │  │Step1│─►│Step2│─►│Step3│─►│Step4│─►│Step5│        │
-  │  │Disc.│  │Ingest│ │Sync │  │Ident│  │Embed│        │
-  │  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘       │
-  │                                                        │
-  │  Control Signals:                                      │
-  │  • PAUSE  → stops after current step completes         │
-  │  • RESUME → continues from paused step                 │
-  │  • CANCEL → marks execution as cancelled               │
-  │  • RERUN  → creates new execution copying config       │
-  │                                                        │
-  │  Pipeline Types:                                       │
-  │  • full_github    = discover → ingest → sync → embed   │
-  │  • full_huggingface = discover → ingest → sync → embed │
-  │  • full           = both platforms end-to-end           │
-  │  • sync_only      = bridge sync only                   │
-  │  • embed_only     = embedding generation only          │
-  │  • identity_only  = identity resolution only           │
-  └───────────────────────────────────────────────────────┘
+ app/api/v1/
+ ├── controller/
+ │   ├── ingest_source_api.py      ← GH/HF/LN discover + run + filter
+ │   ├── ingest_job_api.py         ← Job monitoring + retry
+ │   ├── ingest_pipeline_api.py    ← Pipeline orchestration + sync + embed
+ │   ├── ingest_schedule_api.py    ← Schedule CRUD
+ │   ├── ingest_identity_api.py    ← Identity resolution
+ │   ├── mailbox_api.py            ← Mailbox management
+ │   ├── email_campaign_api.py     ← Campaign management
+ │   ├── email_template_api.py     ← Template CRUD
+ │   ├── email_tracking_api.py     ← Open/click/unsubscribe tracking
+ │   ├── email_enrichment_api.py   ← Email discovery
+ │   └── developer_profile_api.py  ← Search + profiles + ranking
+ ├── request/
+ │   ├── ingest_request.py         ← Ingest request models
+ │   └── email_request.py          ← Email request models
+ ├── response/
+ │   ├── base_response.py          ← BaseResponse[T] wrapper
+ │   ├── ingest_response.py        ← Ingest response models
+ │   └── email_response.py         ← Email response models
+ └── router.py                     ← Registers all routers
 
-  Developer Search Flow
+ Key Service Layer
 
-  GET /developers/search?q="machine learning Python"
-          │
-          ▼
-  ┌───────────────────────────────────────────────────────┐
-  │  SearchService                                         │
-  │                                                        │
-  │  ┌─────────────────────┐  ┌─────────────────────┐    │
-  │  │  Qdrant Vector      │  │  OpenSearch Keyword  │    │
-  │  │  Search             │  │  Search              │    │
-  │  │                     │  │                      │    │
-  │  │  query → embed      │  │  query → BM25        │    │
-  │  │  → cosine similarity│  │  → full-text match   │    │
-  │  │  → top K results    │  │  → top K results     │    │
-  │  └──────────┬──────────┘  └──────────┬───────────┘    │
-  │             │                        │                 │
-  │             └────────┬───────────────┘                 │
-  │                      ▼                                 │
-  │  ┌─────────────────────────────────────────────┐      │
-  │  │  Reciprocal Rank Fusion (RRF)               │      │
-  │  │                                              │      │
-  │  │  For each result in both lists:              │      │
-  │  │  score = Σ 1/(k + rank_i)                   │      │
-  │  │  where k = 60 (constant)                    │      │
-  │  │                                              │      │
-  │  │  Merges both result sets by fused score      │      │
-  │  └──────────────────┬──────────────────────────┘      │
-  │                     │                                  │
-  │                     ▼                                  │
-  │  ┌─────────────────────────────────────────────┐      │
-  │  │  Cross-Encoder Reranking (optional)         │      │
-  │  │  • Takes top N fused results                │      │
-  │  │  • Scores (query, profile_text) pairs       │      │
-  │  │  • Re-sorts by cross-encoder score          │      │
-  │  └──────────────────┬──────────────────────────┘      │
-  │                     │                                  │
-  │                     ▼                                  │
-  │  ┌─────────────────────────────────────────────┐      │
-  │  │  Return ranked developer profiles           │      │
-  │  └─────────────────────────────────────────────┘      │
-  └───────────────────────────────────────────────────────┘
+ app/
+ ├── ingest/
+ │   ├── gh/
+ │   │   ├── config.py             ← GH-specific settings
+ │   │   ├── client.py             ← GitHub API client (REST + GraphQL)
+ │   │   ├── discover.py           ← Follower-band + star-range discovery
+ │   │   ├── orchestrator.py       ← Producer-worker user ingestion
+ │   │   ├── storage.py            ← PostgreSQL writes
+ │   │   └── token_pool.py         ← Rotating GitHub PATs
+ │   ├── hf/
+ │   │   ├── config.py / client.py / discover.py
+ │   │   ├── orchestrator.py / storage.py
+ │   ├── ln/
+ │   │   ├── config.py / client.py (Proxycurl)
+ │   │   ├── discover.py / orchestrator.py / storage.py
+ │   ├── bridge/
+ │   │   ├── orchestrator.py       ← 5-layer merge pipeline
+ │   │   ├── merge.py              ← Pure merge functions (domain, aggregation, cohesive)
+ │   │   ├── config.py             ← Bridge configuration
+ │   │   ├── resolver.py           ← Identity resolution engine
+ │   │   ├── storage.py            ← Profile merge operations
+ │   │   └── indexer.py            ← DualIndexer (Qdrant + OpenSearch)
+ │   ├── pipeline/
+ │   │   ├── runner.py             ← Step-based pipeline executor
+ │   │   ├── steps.py              ← Declarative step definitions per pipeline type
+ │   │   ├── tracker.py            ← Execution state tracking
+ │   │   └── scheduler.py          ← Cron-based scheduling
+ │   └── common/
+ │       ├── job_tracker.py        ← Job lifecycle management
+ │       └── embed.py              ← Batch embedding generation
+ ├── service/
+ │   ├── profile_search_service.py ← Hybrid search + RRF + reranking
+ │   ├── profile_service.py        ← Profile CRUD
+ │   └── ranking_service.py        ← Developer ranking/scoring
+ └── common/
+     ├── auth/
+     │   ├── cognito.py            ← Cognito JWT validation (RS256, JWKS)
+     │   └── auth.py               ← get_actor_id dependency wrapper
+     └── ingest_common.py          ← Shared helpers
 
-  Email Outreach System
-
-  ┌─────────────────────────────────────────────────────────────────────┐
-  │                     Email Outreach Flow                               │
-  │                                                                      │
-  │  1. SETUP                                                            │
-  │  ┌──────────────┐  ┌──────────────────┐  ┌────────────────┐        │
-  │  │ Mailbox      │  │ Email Template   │  │ Campaign       │        │
-  │  │ (OAuth creds)│  │ (Jinja2 body,    │  │ (multi-step    │        │
-  │  │ IMAP/SMTP    │  │  subject, vars)  │  │  sequences)    │        │
-  │  └──────┬───────┘  └────────┬─────────┘  └───────┬────────┘        │
-  │         │                   │                     │                  │
-  │  2. CAMPAIGN CONFIGURATION                                           │
-  │  ┌──────▼───────────────────▼─────────────────────▼────────┐        │
-  │  │  Campaign Steps                                          │        │
-  │  │  ┌────────┐    ┌────────┐    ┌────────┐                │        │
-  │  │  │ Step 1 │───►│ Step 2 │───►│ Step 3 │                │        │
-  │  │  │Day 0   │    │Day 3   │    │Day 7   │                │        │
-  │  │  │Template │    │Template│    │Template│                │        │
-  │  │  │   A    │    │   B    │    │   C    │                │        │
-  │  │  └────────┘    └────────┘    └────────┘                │        │
-  │  └─────────────────────────┬────────────────────────────────┘        │
-  │                            │                                         │
-  │  3. RECIPIENTS                                                       │
-  │  ┌─────────────────────────▼────────────────────────────────┐        │
-  │  │  email_recipient table                                    │        │
-  │  │  • developer_profile_id → enriched email                 │        │
-  │  │  • status: pending → sent → replied | bounced           │        │
-  │  │  • current_step tracking                                 │        │
-  │  └─────────────────────────┬────────────────────────────────┘        │
-  │                            │                                         │
-  │  4. SENDING                                                          │
-  │  ┌─────────────────────────▼────────────────────────────────┐        │
-  │  │  EmailSender                                              │        │
-  │  │  • Render template with recipient vars                   │        │
-  │  │  • Inject tracking pixel (1x1 transparent PNG)           │        │
-  │  │  • Send via SMTP through mailbox                         │        │
-  │  │  • Log to email_send_log                                 │        │
-  │  └─────────────────────────┬────────────────────────────────┘        │
-  │                            │                                         │
-  │  5. TRACKING                                                         │
-  │  ┌─────────────────────────▼────────────────────────────────┐        │
-  │  │  Events tracked:                                          │        │
-  │  │  • open (tracking pixel loaded)                          │        │
-  │  │  • click (redirect link clicked)                         │        │
-  │  │  • reply (IMAP inbox check)                              │        │
-  │  │  • bounce (delivery failure)                             │        │
-  │  │  → email_event table                                     │        │
-  │  └──────────────────────────────────────────────────────────┘        │
-  │                                                                      │
-  └─────────────────────────────────────────────────────────────────────┘
-
-  Embedding Generation Flow
-
-  POST /ingest/embed
-          │
-          ▼
-  ┌───────────────────────────────────────────────┐
-  │  BatchEmbedder                                 │
-  │                                                │
-  │  1. Query profiles needing embeddings          │
-  │     (new or updated since last embed)          │
-  │                                                │
-  │  2. For each profile:                          │
-  │     ┌────────────────────────────────────┐     │
-  │     │ Build embedding_text:              │     │
-  │     │ "{name} | {bio} | Skills: {langs} │     │
-  │     │  | Repos: {top_repos} | {company} │     │
-  │     │  | {location}"                     │     │
-  │     └──────────────┬─────────────────────┘     │
-  │                    │                           │
-  │  3. Batch encode   │                           │
-  │     ┌──────────────▼─────────────────────┐     │
-  │     │ SentenceTransformer                │     │
-  │     │ model: all-MiniLM-L6-v2           │     │
-  │     │ → 384-dimensional vectors          │     │
-  │     └──────────────┬─────────────────────┘     │
-  │                    │                           │
-  │  4. Dual index     │                           │
-  │     ┌──────────────▼─────────────────────┐     │
-  │     │ DualIndexer                        │     │
-  │     │ ├─► Qdrant: upsert vector + payload│     │
-  │     │ └─► OpenSearch: index document     │     │
-  │     └────────────────────────────────────┘     │
-  └───────────────────────────────────────────────┘
-
-  API Endpoint Map (54 total)
-
-  /api/v1/
-  ├── health/
-  │   ├── GET  /health              → liveness check
-  │   └── GET  /ready               → readiness check
-  │
-  ├── ingest/                        (33 endpoints — 5 controllers)
-  │   ├── source/
-  │   │   ├── POST /gh/discover     → discover GitHub users
-  │   │   ├── POST /gh/run          → ingest GitHub profiles
-  │   │   ├── POST /hf/discover     → discover HuggingFace authors
-  │   │   ├── POST /hf/run          → ingest HuggingFace profiles
-  │   │   ├── POST /ln/discover     → extract LinkedIn URLs
-  │   │   └── POST /ln/run          → ingest LinkedIn profiles
-  │   │
-  │   ├── jobs/
-  │   │   ├── GET  /status          → checkpoint summary
-  │   │   ├── POST /retry           → retry failed items
-  │   │   ├── GET  /jobs            → list jobs (filterable)
-  │   │   ├── GET  /jobs/{id}       → job detail + counts
-  │   │   ├── GET  /jobs/{id}/items → job item list
-  │   │   ├── GET  /jobs/{id}/data  → ingested data for job
-  │   │   └── GET  /jobs/{id}/data/{login} → single user data
-  │   │
-  │   ├── pipeline/
-  │   │   ├── POST /sync            → trigger bridge sync
-  │   │   ├── POST /embed           → trigger batch embedding
-  │   │   ├── POST /pipeline/start  → start pipeline
-  │   │   ├── GET  /pipeline/active → list active pipelines
-  │   │   ├── GET  /pipeline/{id}   → execution detail
-  │   │   ├── POST /pipeline/{id}/pause
-  │   │   ├── POST /pipeline/{id}/resume
-  │   │   ├── POST /pipeline/{id}/cancel
-  │   │   ├── POST /pipeline/{id}/rerun
-  │   │   └── GET  /pipeline/status → health dashboard
-  │   │
-  │   ├── schedule/
-  │   │   ├── POST /schedule        → create schedule
-  │   │   ├── GET  /schedules       → list schedules
-  │   │   ├── PUT  /schedule/{id}   → update schedule
-  │   │   └── DELETE /schedule/{id} → delete schedule
-  │   │
-  │   └── identity/
-  │       ├── GET  /identity/candidates
-  │       ├── GET  /identity/candidates/{id}
-  │       ├── POST /identity/candidates/{id}/approve
-  │       ├── POST /identity/candidates/{id}/reject
-  │       ├── POST /identity/resolve
-  │       └── GET  /identity/stats
-  │
-  ├── email/                         (14 endpoints — 5 controllers)
-  │   ├── mailbox/     → CRUD + OAuth connect
-  │   ├── templates/   → CRUD + preview
-  │   ├── campaigns/   → CRUD + steps + recipients + send
-  │   ├── tracking/    → pixel + click + events
-  │   └── enrichment/  → find emails for profiles
-  │
-  └── developers/                    (5 endpoints)
-      ├── GET  /search              → hybrid search
-      ├── GET  /{id}                → profile detail
-      ├── GET  /{id}/repos          → repos list
-      ├── GET  /{id}/contributions  → contribution history
-      └── GET  /rankings            → ranked leaderboard
-
-  File Structure (Controller Layer)
-
-  app/api/v1/
-  ├── controller/
-  │   ├── ingest_source_api.py      ← GH/HF/LN discover + run
-  │   ├── ingest_job_api.py         ← Job monitoring + retry
-  │   ├── ingest_pipeline_api.py    ← Pipeline orchestration
-  │   ├── ingest_schedule_api.py    ← Schedule CRUD
-  │   ├── ingest_identity_api.py    ← Identity resolution
-  │   ├── mailbox_api.py            ← Mailbox management
-  │   ├── email_campaign_api.py     ← Campaign management
-  │   ├── email_template_api.py     ← Template CRUD
-  │   ├── email_tracking_api.py     ← Open/click tracking
-  │   ├── email_enrichment_api.py   ← Email discovery
-  │   └── developer_api.py          ← Search + profiles
-  ├── request/
-  │   ├── ingest_request.py         ← 10 request models
-  │   └── email_request.py          ← Email request models
-  ├── response/
-  │   ├── base_response.py          ← BaseResponse[T] wrapper
-  │   ├── ingest_response.py        ← 18 response models
-  │   └── email_response.py         ← Email response models
-  └── router.py                     ← Registers all routers
-
-  Key Service Layer
-
-  app/
-  ├── ingest/
-  │   ├── github/
-  │   │   ├── config.py             ← GH-specific settings
-  │   │   ├── client.py             ← GitHub API client (REST + GraphQL)
-  │   │   ├── discover.py           ← Star-range based discovery
-  │   │   ├── orchestrator.py       ← Concurrent user ingestion
-  │   │   ├── storage.py            ← PostgreSQL writes
-  │   │   └── token_pool.py         ← Rotating GitHub PATs
-  │   ├── huggingface/
-  │   │   ├── config.py / client.py / discover.py
-  │   │   ├── orchestrator.py / storage.py
-  │   ├── linkedin/
-  │   │   ├── config.py / client.py (Proxycurl)
-  │   │   ├── discover.py / orchestrator.py / storage.py
-  │   ├── bridge/
-  │   │   ├── sync.py               ← 4-layer merge pipeline
-  │   │   ├── resolver.py           ← Identity resolution engine
-  │   │   ├── storage.py            ← Profile merge operations
-  │   │   └── indexer.py            ← DualIndexer (Qdrant + OpenSearch)
-  │   ├── pipeline/
-  │   │   ├── runner.py             ← Step-based pipeline executor
-  │   │   ├── tracker.py            ← Execution state tracking
-  │   │   └── scheduler.py          ← Cron-based scheduling
-  │   └── common/
-  │       ├── job_tracker.py        ← Job lifecycle management
-  │       └── embed.py              ← Batch embedding generation
-  ├── service/
-  │   ├── search_service.py         ← Hybrid search + RRF + reranking
-  │   ├── profile_service.py        ← Profile CRUD
-  │   └── ranking_service.py        ← Developer ranking/scoring
-  └── common/
-      └── ingest_common.py          ← Shared helpers
-
-  That's the full codebase architecture. The system is essentially a developer intelligence platform — it discovers developers across GitHub, HuggingFace, and LinkedIn, merges cross-platform
-  identities, builds searchable profiles with vector + keyword indexing, and enables outreach via email campaigns.
+ That's the full codebase architecture. The system is a developer intelligence platform — it discovers developers across GitHub, HuggingFace, and LinkedIn, resolves cross-platform identities, merges multi-layer profiles, builds searchable profiles with vector + keyword indexing, and enables outreach via email campaigns.

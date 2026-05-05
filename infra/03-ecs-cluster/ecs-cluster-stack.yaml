@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template specifying the configuration of ECS clusters
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  ClusterMinSize:
+    Default: '1'
+    Description: Min size for ECS Cluster
+    Type: Number
+    MinValue: '1'
+  ClusterMaxSize:
+    Default: '2'
+    Description: Max size for ECS Cluster
+    Type: Number
+    MinValue: '1'
+  NetworkStackName:
+    AllowedPattern: \S+
+    Default: octopodai-dev-network-stack
+    Description: Name of network stack
+    Type: String
+  SSHKeyName:
+    Description: Name of the SSH key pair to access the instances
+    Type: AWS::EC2::KeyPair::KeyName
+
+Mappings:
+  AccountMap:
+    us-east-1:
+      '349738643995': 349738643995.us-east-1
+    us-west-2:
+      '349738643995': 349738643995.us-west-2
+
+  RegionMap:
+    349738643995.us-east-1:
+      az1: us-east-1a
+      az2: us-east-1b
+      az3: us-east-1c
+    349738643995.us-west-2:
+      az1: us-west-2a
+      az2: us-west-2b
+      az3: us-west-2c
+
+  EnvironmentInstanceTypes:
+    dev:
+      EC2InstanceType: t3a.micro  # AMD-based, ~10% cheaper than t3.micro
+    prod:
+      EC2InstanceType: t3.large   # Much cheaper than c5.4xlarge for general workloads
+
+Conditions:
+  IsDevEnvironment: !Equals [!Ref Environment, dev]
+  IsProdEnvironment: !Equals [!Ref Environment, prod]
+
+Resources:
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-ECSCluster
+
+  ECSClusterHighMemoryReservationAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmActions:
+        - Ref: ECSClusterScaleUpPolicy
+      AlarmDescription: Alarm if memory reservation on the cluster is high so it can be scaled up
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      EvaluationPeriods: '1'
+      MetricName: MemoryReservation
+      Namespace: AWS/ECS
+      Period: '60'
+      Statistic: Average
+      Threshold: '50'
+
+  ECSClusterLowMemoryReservationAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      AlarmActions:
+        - Ref: ECSClusterScaleDownPolicy
+      AlarmDescription: Alarm if memory reservation on the cluster is low so it can be scaled down
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      EvaluationPeriods: '15'
+      MetricName: MemoryReservation
+      Namespace: AWS/ECS
+      Period: '120'
+      Statistic: Average
+      Threshold: '30'
+
+  ECSClusterScaleDownPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref ECSClusterASG
+      PolicyType: StepScaling
+      EstimatedInstanceWarmup: 300
+      StepAdjustments:
+        -
+          MetricIntervalUpperBound: 0
+          ScalingAdjustment: -1
+
+  ECSClusterScaleUpPolicy:
+    Type: "AWS::AutoScaling::ScalingPolicy"
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref ECSClusterASG
+      Cooldown: '300'
+      ScalingAdjustment: '1'
+
+  ECSClusterASG:
+    Type: "AWS::AutoScaling::AutoScalingGroup"
+    Properties:
+      AvailabilityZones:
+        - !FindInMap [RegionMap, !FindInMap [AccountMap, !Ref "AWS::Region", !Ref "AWS::AccountId"], az1]
+        - !FindInMap [RegionMap, !FindInMap [AccountMap, !Ref "AWS::Region", !Ref "AWS::AccountId"], az2]
+        - !FindInMap [RegionMap, !FindInMap [AccountMap, !Ref "AWS::Region", !Ref "AWS::AccountId"], az3]
+      Cooldown: '30'
+      HealthCheckGracePeriod: 600
+      HealthCheckType: EC2
+      LaunchTemplate:
+        LaunchTemplateId: !Ref ECSLaunchTemplate
+        Version: !GetAtt ECSLaunchTemplate.LatestVersionNumber
+      MaxSize: !Ref ClusterMaxSize
+      MinSize: !Ref ClusterMinSize
+      VPCZoneIdentifier:
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-AppSubnetA'
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-AppSubnetB'
+        - !ImportValue
+          'Fn::Sub': '${NetworkStackName}-AppSubnetC'
+      MetricsCollection:
+        - Granularity: 1Minute
+
+  ECSLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${ProjectName}-${Environment}-ecs-launch-template
+      LaunchTemplateData:
+        ImageId: !Sub '{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id}}'
+        InstanceType: !FindInMap
+          - EnvironmentInstanceTypes
+          - !Ref Environment
+          - EC2InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt ECSInstanceProfile.Arn
+        SecurityGroupIds:
+          - !ImportValue
+            'Fn::Sub': '${NetworkStackName}-AppSecurityGroup'
+        KeyName: !Ref SSHKeyName
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 30
+              VolumeType: gp3
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config
+            yum update -y
+            yum install -y ecs-init
+            service docker start
+            start ecs
+
+  ECSInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      Path: "/"
+      Roles:
+        - Ref: ECSInstanceRole
+
+  ECSInstanceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ec2.amazonaws.com"
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Policies:
+        - PolicyName: "ecs-service"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecs:CreateCluster"
+                  - "ecs:DeregisterContainerInstance"
+                  - "ecs:DiscoverPollEndpoint"
+                  - "ecs:Poll"
+                  - "ecs:RegisterContainerInstance"
+                  - "ecs:StartTelemetrySession"
+                  - "ecs:Submit*"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: "*"
+
+Outputs:
+  ECSClusterId:
+    Description: ECS Cluster ID
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub "${AWS::StackName}-ECSClusterId"
+
+  ECSClusterArn:
+    Description: ECS Cluster Arn
+    Value: !GetAtt ECSCluster.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ECSClusterArn"

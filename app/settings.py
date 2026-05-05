@@ -58,8 +58,8 @@ class Settings(BaseSettings):
     gh_graphql_endpoint: str = "https://api.github.com/graphql"
     gh_rest_endpoint: str = "https://api.github.com"
     gh_concurrency: int = 8
-    gh_max_repos_per_user: int = 10
-    gh_max_commits_per_repo: int = 10
+    gh_max_repos_per_user: int = 100
+    gh_max_commits_per_repo: int = 1
     gh_max_events_per_user: int = 100
     gh_skip_forks: bool = True
     gh_refresh_after_hours: int = 24
