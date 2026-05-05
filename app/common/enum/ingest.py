@@ -24,6 +24,7 @@ class IngestJobType(str, Enum):
     PIPELINE_DAILY = "pipeline_daily"
     PIPELINE_WEEKLY = "pipeline_weekly"
     PIPELINE_SEED = "pipeline_seed"
+    PROFILE_INGEST = "profile_ingest"
 
 
 class IngestJobStatus(str, Enum):

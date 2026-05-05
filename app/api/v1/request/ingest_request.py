@@ -1,6 +1,6 @@
 from typing import Any  # noqa: TC003
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ---- Source (GH/HF/LN) ----
 
@@ -95,6 +95,43 @@ class ScheduleUpdateRequest(BaseModel):
 
 
 # ---- Identity ----
+
+
+class ManualProfileRequest(BaseModel):
+    name: str | None = Field(default=None, description="Display name (metadata only)")
+    github_username: str | None = Field(
+        default=None, description="GitHub username or profile URL (e.g. 'torvalds' or 'https://github.com/torvalds')"
+    )
+    huggingface_username: str | None = Field(
+        default=None, description="HuggingFace username or profile URL (e.g. 'bigscience' or 'https://huggingface.co/bigscience')"
+    )
+    linkedin_url: str | None = Field(
+        default=None, description="LinkedIn username/slug or full URL (e.g. 'suniltiwari' or 'https://www.linkedin.com/in/suniltiwari/')"
+    )
+
+    @model_validator(mode="after")
+    def normalize_and_validate(self) -> "ManualProfileRequest":
+        # Extract username from GitHub URL
+        if self.github_username and "/" in self.github_username:
+            parts = self.github_username.rstrip("/").split("/")
+            self.github_username = parts[-1]
+
+        # Extract username from HuggingFace URL
+        if self.huggingface_username and "/" in self.huggingface_username:
+            parts = self.huggingface_username.rstrip("/").split("/")
+            self.huggingface_username = parts[-1]
+
+        # Normalize LinkedIn: accept username/slug and build full URL
+        if self.linkedin_url and "linkedin.com" not in self.linkedin_url:
+            slug = self.linkedin_url.strip("/")
+            self.linkedin_url = f"https://www.linkedin.com/in/{slug}/"
+        elif self.linkedin_url:
+            # Ensure trailing slash for consistency
+            self.linkedin_url = self.linkedin_url.rstrip("/") + "/"
+
+        if not any([self.github_username, self.huggingface_username, self.linkedin_url]):
+            raise ValueError("At least one platform identifier is required")
+        return self
 
 
 class IdentityResolveRequest(BaseModel):

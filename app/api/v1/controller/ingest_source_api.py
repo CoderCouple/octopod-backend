@@ -15,6 +15,7 @@ from app.api.v1.request.ingest_request import (
     HFDiscoverRequest,
     IngestRequest,
     LNIngestRequest,
+    ManualProfileRequest,
 )
 from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.ingest_response import GHFilterResponse, JobStartedResponse
@@ -548,4 +549,153 @@ async def ln_run(
                 pass
 
     background_tasks.add_task(lambda: asyncio.run(_run()))
+    return success_response({"job_id": job_id, "status": "started"})
+
+
+# ---- Manual profile ingest ----
+
+
+@router.post("/profile", response_model=BaseResponse[JobStartedResponse])
+async def ingest_profile(
+    req: ManualProfileRequest, background_tasks: BackgroundTasks
+) -> BaseResponse:
+    """Ingest a single person from provided platform links and run the full merge pipeline."""
+    pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+    try:
+        from app.ingest.common.job_tracker import JobTracker
+
+        tracker = JobTracker(pool, "profile")
+        job_id = await tracker.create_job(
+            job_type=IngestJobType.PROFILE_INGEST,
+            trigger=IngestTrigger.API,
+            input_params={
+                "name": req.name,
+                "github_username": req.github_username,
+                "huggingface_username": req.huggingface_username,
+                "linkedin_url": req.linkedin_url,
+            },
+        )
+    finally:
+        await pool.close()
+
+    async def _run_manual_profile() -> None:
+        try:
+            from app.ingest.bridge.config import BridgeConfig
+            from app.ingest.bridge.orchestrator import BridgeOrchestrator
+            from app.ingest.bridge.storage import BridgeStorage
+            from app.ingest.common.job_tracker import JobTracker
+
+            # Step 1: GitHub ingest
+            if req.github_username:
+                from app.ingest.gh.client import GitHubClient
+                from app.ingest.gh.config import GHConfig
+                from app.ingest.gh.orchestrator import GHOrchestrator
+                from app.ingest.gh.storage import GHStorage
+                from app.ingest.gh.token_pool import TokenPool
+
+                gh_config = GHConfig()
+                gh_config.validate()
+                token_pool = TokenPool(gh_config.github_tokens)
+                gh_storage = GHStorage(
+                    gh_config.db_dsn, gh_config.db_pool_min, gh_config.db_pool_max
+                )
+                await gh_storage.connect()
+                try:
+                    async with GitHubClient(gh_config, token_pool) as client:
+                        orch = GHOrchestrator(gh_config, client, gh_storage)
+                        await orch.run([req.github_username])
+                finally:
+                    await gh_storage.close()
+
+            # Step 2: HuggingFace ingest
+            if req.huggingface_username:
+                from app.ingest.hf.client import HFClient
+                from app.ingest.hf.config import HFConfig
+                from app.ingest.hf.orchestrator import HFOrchestrator
+                from app.ingest.hf.storage import HFStorage
+
+                hf_config = HFConfig()
+                hf_config.validate()
+                hf_storage = HFStorage(
+                    hf_config.db_dsn, hf_config.db_pool_min, hf_config.db_pool_max
+                )
+                await hf_storage.connect()
+                try:
+                    async with HFClient(hf_config) as client:
+                        orch = HFOrchestrator(hf_config, client, hf_storage)
+                        await orch.run([req.huggingface_username])
+                finally:
+                    await hf_storage.close()
+
+            # Step 3: LinkedIn ingest
+            if req.linkedin_url:
+                from app.ingest.ln.client import ProxycurlClient
+                from app.ingest.ln.config import LNConfig
+                from app.ingest.ln.orchestrator import LNOrchestrator
+                from app.ingest.ln.storage import LNStorage
+
+                ln_config = LNConfig()
+                ln_config.validate()
+                ln_storage = LNStorage(
+                    ln_config.db_dsn, ln_config.db_pool_min, ln_config.db_pool_max
+                )
+                await ln_storage.connect()
+                try:
+                    async with ProxycurlClient(ln_config) as client:
+                        orch = LNOrchestrator(ln_config, client, ln_storage)
+                        await orch.run(urls=[req.linkedin_url])
+                finally:
+                    await ln_storage.close()
+
+            # Step 4: Bridge merge pipeline
+            bridge_config = BridgeConfig()
+            bridge_config.validate()
+            bridge_storage = BridgeStorage(
+                bridge_config.db_dsn, bridge_config.db_pool_min, bridge_config.db_pool_max
+            )
+            await bridge_storage.connect()
+            try:
+                bridge_tracker = JobTracker(bridge_storage.pool, "profile")
+                bridge_tracker._job_id = job_id
+                await bridge_tracker.mark_running()
+
+                bridge_orch = BridgeOrchestrator(bridge_config, bridge_storage)
+                await bridge_orch._sync_one({
+                    "login": req.github_username,
+                    "hf_username": req.huggingface_username,
+                    "linkedin_url": req.linkedin_url,
+                })
+
+                platforms = []
+                if req.github_username:
+                    platforms.append("github")
+                if req.huggingface_username:
+                    platforms.append("huggingface")
+                if req.linkedin_url:
+                    platforms.append("linkedin")
+
+                await bridge_tracker.mark_completed({
+                    "processed": 1,
+                    "succeeded": 1,
+                    "failed": 0,
+                    "skipped": 0,
+                    "platforms": platforms,
+                })
+            finally:
+                await bridge_storage.close()
+
+        except Exception as e:
+            log.exception("profile-ingest job %s failed", job_id)
+            try:
+                p = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
+                try:
+                    t = JobTracker(p, "profile")
+                    t._job_id = job_id
+                    await t.mark_failed(str(e))
+                finally:
+                    await p.close()
+            except Exception:
+                pass
+
+    background_tasks.add_task(lambda: asyncio.run(_run_manual_profile()))
     return success_response({"job_id": job_id, "status": "started"})
