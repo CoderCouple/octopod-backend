@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SQS FIFO queue + Lambda for sending emails via AWS SES.
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: octopod
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+  SesFromEmail:
+    Type: String
+    Description: Verified SES sender email address.
+
+Resources:
+  # ── Dead-Letter Queue ──────────────────────────────────────────────
+  EmailDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectName}-${Environment}-email-dlq.fifo"
+      FifoQueue: true
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  # ── Main FIFO Queue ────────────────────────────────────────────────
+  EmailQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectName}-${Environment}-email-queue.fifo"
+      FifoQueue: true
+      ContentBasedDeduplication: false
+      MessageRetentionPeriod: 345600  # 4 days
+      VisibilityTimeout: 360          # > Lambda timeout
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EmailDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # ── Lambda Execution Role ──────────────────────────────────────────
+  EmailSenderLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-email-sender-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EmailSenderPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt EmailQueue.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+
+  # ── Lambda Function ────────────────────────────────────────────────
+  EmailSenderLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-${Environment}-email-sender"
+      Runtime: python3.11
+      Handler: handler.handler
+      MemorySize: 128
+      Timeout: 300
+      Role: !GetAtt EmailSenderLambdaRole.Arn
+      Environment:
+        Variables:
+          SES_FROM_EMAIL: !Ref SesFromEmail
+      Code:
+        ZipFile: |
+          import json, logging, boto3
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+          ses = boto3.client("ses")
+
+          def handler(event, context):
+              for record in event["Records"]:
+                  payload = json.loads(record["body"])
+                  sender = payload.get("senderEmail", "")
+                  sender_name = payload.get("senderName", "")
+                  source = f"{sender_name} <{sender}>" if sender_name else sender
+                  ses.send_email(
+                      Source=source,
+                      Destination={"ToAddresses": [payload["to"]]},
+                      Message={
+                          "Subject": {"Data": payload["subject"], "Charset": "UTF-8"},
+                          "Body": {
+                              "Html": {"Data": payload["bodyHtml"], "Charset": "UTF-8"},
+                              "Text": {"Data": payload.get("bodyText", ""), "Charset": "UTF-8"},
+                          },
+                      },
+                  )
+                  logger.info("Sent email %s to %s", payload.get("messageId"), payload["to"])
+              return {"statusCode": 200}
+
+  # ── SQS → Lambda Event Source Mapping ──────────────────────────────
+  EmailQueueEventSource:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !GetAtt EmailQueue.Arn
+      FunctionName: !GetAtt EmailSenderLambda.Arn
+      BatchSize: 10
+      Enabled: true
+
+Outputs:
+  EmailQueueUrl:
+    Description: URL of the email SQS FIFO queue
+    Value: !Ref EmailQueue
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-email-queue-url"
+
+  EmailQueueArn:
+    Description: ARN of the email SQS FIFO queue
+    Value: !GetAtt EmailQueue.Arn
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-email-queue-arn"
+
+  EmailSenderLambdaArn:
+    Description: ARN of the email sender Lambda
+    Value: !GetAtt EmailSenderLambda.Arn
+    Export:
+      Name: !Sub "${ProjectName}-${Environment}-email-sender-lambda-arn"

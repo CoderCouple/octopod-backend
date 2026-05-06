@@ -66,7 +66,7 @@ async def test_orchestrator_success():
     assert stats.failed == 0
     assert stats.processed == 1
     storage.upsert_user.assert_called_once()
-    storage.mark_checkpoint.assert_called_with("testuser", "success", job_id=None)
+    storage.mark_checkpoint.assert_called_with("testuser", "ingested", job_id=None)
 
 
 @pytest.mark.asyncio
@@ -117,7 +117,7 @@ async def test_orchestrator_handles_transient_error():
 
     assert stats.transient_errors == 1
     assert stats.failed == 1
-    storage.mark_checkpoint.assert_called_with("flaky_user", "pending", "timeout", job_id=None)
+    storage.mark_checkpoint.assert_called_with("flaky_user", "failed", "timeout", job_id=None)
 
 
 @pytest.mark.asyncio

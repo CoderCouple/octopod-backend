@@ -15,7 +15,7 @@ from app.api.v1.response.email_template_response import (
     EmailTemplateResponse,
     TemplatePreviewResponse,
 )
-from app.common.auth.auth import get_actor_id
+from app.common.auth.auth import get_actor_id_required
 from app.common.exceptions import EntityNotFoundError
 from app.common.pagination import PaginatedResponse
 from app.db.repository.email_template_repository import EmailTemplateRepository
@@ -34,11 +34,11 @@ def get_repo(db: AsyncSession = Depends(get_db)) -> EmailTemplateRepository:
 )
 async def create_template(
     body: CreateEmailTemplateRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Create a new email template."""
-    owner_id = actor_id or "system"
+    owner_id = actor_id
     template = EmailTemplate(
         owner_id=owner_id,
         name=body.name,
@@ -65,11 +65,11 @@ async def list_templates(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     category: str | None = Query(default=None),
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """List email templates."""
-    owner_id = actor_id or "system"
+    owner_id = actor_id
     if category:
         templates, total = await repo.get_by_category(owner_id, category, offset, limit)
     else:
@@ -82,6 +82,7 @@ async def list_templates(
 @router.get("/email-template/{template_id}", response_model=BaseResponse[EmailTemplateResponse])
 async def get_template(
     template_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Retrieve a single template."""
@@ -97,7 +98,7 @@ async def get_template(
 async def update_template(
     template_id: str,
     body: UpdateEmailTemplateRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Update an email template."""
@@ -121,7 +122,7 @@ async def update_template(
 @router.delete("/email-template/{template_id}", response_model=BaseResponse)
 async def delete_template(
     template_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Soft-delete a template."""
@@ -139,6 +140,7 @@ async def delete_template(
 async def preview_template(
     template_id: str,
     body: PreviewTemplateRequest,
+    _actor_id: str = Depends(get_actor_id_required),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Render a template preview with sample variables."""

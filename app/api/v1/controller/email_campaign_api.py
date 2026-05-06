@@ -23,7 +23,7 @@ from app.api.v1.response.email_campaign_response import (
     EmailCampaignResponse,
     EmailMessageResponse,
 )
-from app.common.auth.auth import get_actor_id
+from app.common.auth.auth import get_actor_id_required
 from app.common.pagination import PaginatedResponse
 from app.db.session import get_db
 from app.service.campaign_service import CampaignService
@@ -42,11 +42,11 @@ def get_campaign_service(db: AsyncSession = Depends(get_db)) -> CampaignService:
 )
 async def create_campaign(
     body: CreateCampaignRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Create a new email campaign."""
-    owner_id = actor_id or "system"
+    owner_id = actor_id
     result = await service.create_campaign(body, owner_id, actor_id)
     return success_response(result, "Campaign created", 201)
 
@@ -58,11 +58,11 @@ async def create_campaign(
 async def list_campaigns(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List campaigns for the current user."""
-    owner_id = actor_id or "system"
+    owner_id = actor_id
     campaigns, total = await service.list_campaigns(owner_id, offset, limit)
     page = PaginatedResponse(items=campaigns, total=total, offset=offset, limit=limit)
     return success_response(page, "Campaigns fetched")
@@ -74,6 +74,7 @@ async def list_campaigns(
 )
 async def get_campaign(
     campaign_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Retrieve a single campaign."""
@@ -88,7 +89,7 @@ async def get_campaign(
 async def update_campaign(
     campaign_id: str,
     body: UpdateCampaignRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Update a campaign."""
@@ -99,7 +100,7 @@ async def update_campaign(
 @router.delete("/email-campaign/{campaign_id}", response_model=BaseResponse)
 async def delete_campaign(
     campaign_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Soft-delete a campaign."""
@@ -115,7 +116,7 @@ async def delete_campaign(
 )
 async def start_campaign(
     campaign_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Start a draft campaign."""
@@ -129,7 +130,7 @@ async def start_campaign(
 )
 async def pause_campaign(
     campaign_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Pause an active campaign."""
@@ -143,7 +144,7 @@ async def pause_campaign(
 )
 async def resume_campaign(
     campaign_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Resume a paused campaign."""
@@ -157,7 +158,7 @@ async def resume_campaign(
 )
 async def cancel_campaign(
     campaign_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Cancel a campaign permanently."""
@@ -175,7 +176,7 @@ async def cancel_campaign(
 async def add_step(
     campaign_id: str,
     body: CreateStepRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Add a step to a campaign sequence."""
@@ -189,6 +190,7 @@ async def add_step(
 )
 async def list_steps(
     campaign_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List all steps in a campaign."""
@@ -203,7 +205,7 @@ async def list_steps(
 async def update_step(
     step_id: str,
     body: UpdateStepRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Update a campaign step."""
@@ -214,7 +216,7 @@ async def update_step(
 @router.delete("/email-campaign/steps/{step_id}", response_model=BaseResponse)
 async def delete_step(
     step_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Delete a campaign step."""
@@ -232,7 +234,7 @@ async def delete_step(
 async def add_recipient(
     campaign_id: str,
     body: AddRecipientRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Add a recipient to a campaign."""
@@ -248,6 +250,7 @@ async def list_recipients(
     campaign_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    _actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List recipients in a campaign."""
@@ -261,7 +264,7 @@ async def list_recipients(
 )
 async def remove_recipient(
     recipient_id: str,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Remove a recipient from a campaign."""
@@ -276,7 +279,7 @@ async def remove_recipient(
 async def add_recipients_from_search(
     campaign_id: str,
     body: AddRecipientsFromSearchRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     db: AsyncSession = Depends(get_db),
 ):
     """Add recipients from developer profile IDs with auto-enrichment."""
@@ -332,6 +335,7 @@ async def add_recipients_from_search(
 )
 async def get_campaign_analytics(
     campaign_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Get campaign-level analytics."""
@@ -347,6 +351,7 @@ async def list_campaign_messages(
     campaign_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    _actor_id: str = Depends(get_actor_id_required),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List all messages for a campaign."""

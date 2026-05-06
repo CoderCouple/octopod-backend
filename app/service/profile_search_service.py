@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,7 +50,7 @@ class ProfileSearchService:
         self._embedding_provider = SentenceTransformerProvider()
         return self._embedding_provider
 
-    def _get_qdrant_client(self):
+    def _get_qdrant_client(self) -> Any:
         if self._qdrant_client:
             return self._qdrant_client
         from app.db.qdrant_client import get_qdrant_client
@@ -68,13 +69,13 @@ class ProfileSearchService:
         return self._reranker
 
     @staticmethod
-    def _build_qdrant_filter(filters: dict | None):
+    def _build_qdrant_filter(filters: dict | None) -> Any:
         if not filters:
             return None
 
         from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue, Range
 
-        conditions = []
+        conditions: list[Any] = []
         if filters.get("languages"):
             conditions.append(
                 FieldCondition(key="languages", match=MatchAny(any=filters["languages"]))
@@ -147,12 +148,12 @@ class ProfileSearchService:
         provider = self._get_embedding_provider()
         client = self._get_qdrant_client()
 
-        text = cip.embedding_text or ""
+        text = str(cip.embedding_text or "")
         if not text:
             return ""
 
         vector = await provider.embed(text)
-        point_id = cip.embedding_vector_id or str(uuid.uuid4())
+        point_id = str(cip.embedding_vector_id or uuid.uuid4())
         payload = self._build_payload(cip)
 
         from app.db.qdrant_client import COLLECTION_NAME
@@ -202,7 +203,7 @@ class ProfileSearchService:
                 limit=limit,
                 filters=request.filters,
             )
-            return [(cip.id, score) for cip, score in results]
+            return [(str(cip.id), score) for cip, score in results]
         except Exception:
             logger.debug("Keyword search unavailable (likely non-Postgres DB), skipping")
             return []
@@ -264,7 +265,7 @@ class ProfileSearchService:
             if missing_ids:
                 missing_profiles = await self.cip_repo.list_by_ids(missing_ids)
                 for mp in missing_profiles:
-                    id_to_text[mp.id] = mp.embedding_text or ""
+                    id_to_text[str(mp.id)] = str(mp.embedding_text or "")
 
             candidates = [
                 RerankCandidate(
@@ -290,8 +291,10 @@ class ProfileSearchService:
         profiles = await self.cip_repo.list_by_ids(final_ids)
         rankings = await self.pr_repo.list_by_cohesive_individual_profile_ids(final_ids)
 
-        profile_map = {cip.id: cip for cip in profiles}
-        ranking_map = {r.cohesive_individual_profile_id: r for r in rankings}
+        profile_map: dict[str, CohesiveIndividualProfile] = {
+            str(cip.id): cip for cip in profiles
+        }
+        ranking_map = {str(r.cohesive_individual_profile_id): r for r in rankings}
 
         results: list[SearchResultResponse] = []
         for cip_id in final_ids:
@@ -346,13 +349,13 @@ class ProfileSearchService:
                     continue
 
                 try:
-                    vector = await provider.embed(text)
-                    point_id = cip.embedding_vector_id or str(uuid.uuid4())
+                    vector = await provider.embed(str(text))
+                    point_id = str(cip.embedding_vector_id or uuid.uuid4())
                     payload = self._build_payload(cip)
                     points.append(PointStruct(id=point_id, vector=vector, payload=payload))
 
                     if not cip.embedding_vector_id:
-                        cip.embedding_vector_id = point_id
+                        cip.embedding_vector_id = point_id  # type: ignore[assignment]
                     stats["embedded"] += 1
                 except Exception:
                     logger.exception(f"Failed to embed profile {cip.id}")

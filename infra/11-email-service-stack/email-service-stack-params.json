@@ -1,0 +1,5 @@
+[
+  {"ParameterKey": "ProjectName", "ParameterValue": "octopod"},
+  {"ParameterKey": "Environment", "ParameterValue": "dev"},
+  {"ParameterKey": "SesFromEmail", "ParameterValue": "outreach@octopod.ai"}
+]

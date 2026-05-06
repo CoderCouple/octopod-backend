@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from app.db.base import Base
 
 
-def generate_prefixed_uuid():
+def generate_prefixed_uuid() -> str:
     return f"cip_{uuid.uuid4()}"
 
 

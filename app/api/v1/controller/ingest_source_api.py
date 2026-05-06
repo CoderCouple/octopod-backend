@@ -6,7 +6,7 @@ import logging
 from dataclasses import asdict
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.api.tags import Tags
 from app.api.v1.request.ingest_request import (
@@ -19,6 +19,7 @@ from app.api.v1.request.ingest_request import (
 )
 from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.ingest_response import GHFilterResponse, JobStartedResponse
+from app.common.auth.auth import get_actor_id_required
 from app.common.enum.ingest import IngestJobType, IngestTrigger
 from app.settings import settings
 
@@ -32,7 +33,8 @@ log = logging.getLogger(__name__)
 
 @router.post("/gh/discover", response_model=BaseResponse[JobStartedResponse])
 async def gh_discover(
-    req: GHDiscoverRequest, background_tasks: BackgroundTasks
+    req: GHDiscoverRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -118,7 +120,8 @@ async def gh_discover(
 
 @router.post("/gh/run", response_model=BaseResponse[JobStartedResponse])
 async def gh_run(
-    req: IngestRequest, background_tasks: BackgroundTasks
+    req: IngestRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -183,7 +186,9 @@ async def gh_run(
 
 
 @router.post("/gh/filter", response_model=BaseResponse[GHFilterResponse])
-async def gh_filter(req: GHFilterRequest) -> BaseResponse:
+async def gh_filter(
+    req: GHFilterRequest, _actor_id: str = Depends(get_actor_id_required),
+) -> BaseResponse:
     """Query already-ingested GitHub users by activity and profile criteria.
 
     Returns logins + stats for users matching all filters. The logins list
@@ -294,7 +299,8 @@ async def gh_filter(req: GHFilterRequest) -> BaseResponse:
 
 @router.post("/hf/discover", response_model=BaseResponse[JobStartedResponse])
 async def hf_discover(
-    req: HFDiscoverRequest, background_tasks: BackgroundTasks
+    req: HFDiscoverRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -359,7 +365,8 @@ async def hf_discover(
 
 @router.post("/hf/run", response_model=BaseResponse[JobStartedResponse])
 async def hf_run(
-    req: IngestRequest, background_tasks: BackgroundTasks
+    req: IngestRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -422,7 +429,10 @@ async def hf_run(
 
 
 @router.post("/ln/discover", response_model=BaseResponse[JobStartedResponse])
-async def ln_discover(background_tasks: BackgroundTasks) -> BaseResponse:
+async def ln_discover(
+    background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
+) -> BaseResponse:
     """Extract LinkedIn URLs from GH/HF data."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -486,7 +496,8 @@ async def ln_discover(background_tasks: BackgroundTasks) -> BaseResponse:
 
 @router.post("/ln/run", response_model=BaseResponse[JobStartedResponse])
 async def ln_run(
-    req: LNIngestRequest, background_tasks: BackgroundTasks
+    req: LNIngestRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     """Trigger LinkedIn profile ingestion via Proxycurl."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -557,7 +568,8 @@ async def ln_run(
 
 @router.post("/profile", response_model=BaseResponse[JobStartedResponse])
 async def ingest_profile(
-    req: ManualProfileRequest, background_tasks: BackgroundTasks
+    req: ManualProfileRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     """Ingest a single person from provided platform links and run the full merge pipeline."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)

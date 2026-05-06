@@ -2,8 +2,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_connect_smtp_mailbox(async_client):
-    resp = await async_client.post(
+async def test_connect_smtp_mailbox(authenticated_client):
+    resp = await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "test@example.com",
@@ -24,8 +24,8 @@ async def test_connect_smtp_mailbox(async_client):
 
 
 @pytest.mark.asyncio
-async def test_list_mailboxes(async_client):
-    await async_client.post(
+async def test_list_mailboxes(authenticated_client):
+    await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "a@example.com",
@@ -35,7 +35,7 @@ async def test_list_mailboxes(async_client):
             "smtp_password": "pass",
         },
     )
-    await async_client.post(
+    await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "b@example.com",
@@ -45,14 +45,14 @@ async def test_list_mailboxes(async_client):
             "smtp_password": "pass",
         },
     )
-    resp = await async_client.get("/api/v1/mailbox")
+    resp = await authenticated_client.get("/api/v1/mailbox")
     assert resp.status_code == 200
     assert resp.json()["result"]["total"] == 2
 
 
 @pytest.mark.asyncio
-async def test_get_mailbox(async_client):
-    create = await async_client.post(
+async def test_get_mailbox(authenticated_client):
+    create = await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "get@example.com",
@@ -63,14 +63,14 @@ async def test_get_mailbox(async_client):
         },
     )
     mid = create.json()["result"]["id"]
-    resp = await async_client.get(f"/api/v1/mailbox/{mid}")
+    resp = await authenticated_client.get(f"/api/v1/mailbox/{mid}")
     assert resp.status_code == 200
     assert resp.json()["result"]["id"] == mid
 
 
 @pytest.mark.asyncio
-async def test_update_mailbox(async_client):
-    create = await async_client.post(
+async def test_update_mailbox(authenticated_client):
+    create = await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "upd@example.com",
@@ -81,7 +81,7 @@ async def test_update_mailbox(async_client):
         },
     )
     mid = create.json()["result"]["id"]
-    resp = await async_client.patch(
+    resp = await authenticated_client.patch(
         f"/api/v1/mailbox/{mid}", json={"daily_send_limit": 100}
     )
     assert resp.status_code == 200
@@ -89,8 +89,8 @@ async def test_update_mailbox(async_client):
 
 
 @pytest.mark.asyncio
-async def test_disconnect_mailbox(async_client):
-    create = await async_client.post(
+async def test_disconnect_mailbox(authenticated_client):
+    create = await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "del@example.com",
@@ -101,15 +101,15 @@ async def test_disconnect_mailbox(async_client):
         },
     )
     mid = create.json()["result"]["id"]
-    resp = await async_client.delete(f"/api/v1/mailbox/{mid}")
+    resp = await authenticated_client.delete(f"/api/v1/mailbox/{mid}")
     assert resp.status_code == 200
-    resp = await async_client.get(f"/api/v1/mailbox/{mid}")
+    resp = await authenticated_client.get(f"/api/v1/mailbox/{mid}")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_duplicate_smtp_mailbox(async_client):
-    await async_client.post(
+async def test_duplicate_smtp_mailbox(authenticated_client):
+    await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "dup@example.com",
@@ -119,7 +119,7 @@ async def test_duplicate_smtp_mailbox(async_client):
             "smtp_password": "pass",
         },
     )
-    resp = await async_client.post(
+    resp = await authenticated_client.post(
         "/api/v1/mailbox/smtp/connect",
         json={
             "email_address": "dup@example.com",

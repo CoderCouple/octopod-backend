@@ -15,7 +15,7 @@ from app.api.v1.response.developer_profile_response import (
     ProfileRankingResponse,
     SearchResultResponse,
 )
-from app.common.auth.auth import get_actor_id
+from app.common.auth.auth import get_actor_id_required
 from app.common.pagination import PaginatedResponse
 from app.db.session import get_db
 from app.service.developer_profile_service import DeveloperProfileService
@@ -49,9 +49,9 @@ def get_search_service(db: AsyncSession = Depends(get_db)) -> ProfileSearchServi
 )
 async def create_developer_profile(
     body: CreateDeveloperProfileRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: DeveloperProfileService = Depends(get_profile_service),
-):
+) -> BaseResponse:
     profile = await service.create_profile(body, actor_id)
     return success_response(profile, "Developer profile created", 201)
 
@@ -63,8 +63,9 @@ async def create_developer_profile(
 async def list_developer_profiles(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
+    _actor_id: str = Depends(get_actor_id_required),
     service: DeveloperProfileService = Depends(get_profile_service),
-):
+) -> BaseResponse:
     profiles, total = await service.list_profiles(offset, limit)
     page = PaginatedResponse(items=profiles, total=total, offset=offset, limit=limit)
     return success_response(page, "Developer profiles fetched")
@@ -76,8 +77,9 @@ async def list_developer_profiles(
 )
 async def get_developer_profile(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: DeveloperProfileService = Depends(get_profile_service),
-):
+) -> BaseResponse:
     profile = await service.get_profile(profile_id)
     return success_response(profile, "Developer profile fetched")
 
@@ -89,9 +91,9 @@ async def get_developer_profile(
 async def update_developer_profile(
     profile_id: str,
     body: UpdateDeveloperProfileRequest,
-    actor_id: str | None = Depends(get_actor_id),
+    actor_id: str = Depends(get_actor_id_required),
     service: DeveloperProfileService = Depends(get_profile_service),
-):
+) -> BaseResponse:
     profile = await service.update_profile(profile_id, body, actor_id)
     return success_response(profile, "Developer profile updated")
 
@@ -102,8 +104,9 @@ async def update_developer_profile(
 )
 async def get_cohesive_profile(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     merge_service: ProfileMergeService = Depends(get_merge_service),
-):
+) -> BaseResponse:
     cohesive = await merge_service.get_cohesive_profile(profile_id)
     return success_response(cohesive, "Cohesive profile fetched")
 
@@ -114,8 +117,9 @@ async def get_cohesive_profile(
 )
 async def force_merge(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     merge_service: ProfileMergeService = Depends(get_merge_service),
-):
+) -> BaseResponse:
     cohesive = await merge_service.merge_profile(profile_id)
     return success_response(cohesive, "Profile merged")
 
@@ -126,8 +130,9 @@ async def force_merge(
 )
 async def get_ranking(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     ranking_service: ProfileRankingService = Depends(get_ranking_service),
-):
+) -> BaseResponse:
     ranking = await ranking_service.get_ranking(profile_id)
     return success_response(ranking, "Ranking fetched")
 
@@ -138,8 +143,9 @@ async def get_ranking(
 )
 async def rank_profiles(
     body: RankProfilesRequest,
+    _actor_id: str = Depends(get_actor_id_required),
     ranking_service: ProfileRankingService = Depends(get_ranking_service),
-):
+) -> BaseResponse:
     results, total = await ranking_service.rank_profiles(body)
     page = PaginatedResponse(items=results, total=total, offset=body.offset, limit=body.limit)
     return success_response(page, "Profiles ranked")
@@ -151,8 +157,9 @@ async def rank_profiles(
 )
 async def search_profiles(
     body: SemanticSearchRequest,
+    _actor_id: str = Depends(get_actor_id_required),
     search_service: ProfileSearchService = Depends(get_search_service),
-):
+) -> BaseResponse:
     results = await search_service.search(body)
     return success_response(results, "Search completed")
 
@@ -166,11 +173,12 @@ async def embed_all_profiles(
     background_tasks: BackgroundTasks,
     batch_size: int = Query(default=100, ge=1, le=1000),
     force: bool = Query(default=False),
+    _actor_id: str = Depends(get_actor_id_required),
     search_service: ProfileSearchService = Depends(get_search_service),
-):
+) -> BaseResponse:
     """Trigger batch embedding of all cohesive profiles."""
 
-    async def _run_embed():
+    async def _run_embed() -> None:
         try:
             stats = await search_service.batch_embed_profiles(
                 batch_size=batch_size, force=force

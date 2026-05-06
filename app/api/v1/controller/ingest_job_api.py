@@ -7,7 +7,7 @@ from dataclasses import asdict
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.api.tags import Tags
 from app.api.v1.request.ingest_request import RetryRequest
@@ -20,6 +20,7 @@ from app.api.v1.response.ingest_response import (
     JobSummary,
     RetryStartedResponse,
 )
+from app.common.auth.auth import get_actor_id_required
 from app.common.enum.ingest import ControlSignal, IngestJobType, IngestTrigger
 from app.common.ingest_common import (
     _fetch_gh_user_data,
@@ -37,7 +38,7 @@ log = logging.getLogger(__name__)
 
 
 @router.get("/status", response_model=BaseResponse[IngestStatusResponse])
-async def ingest_status() -> BaseResponse:
+async def ingest_status(_actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     try:
         conn = await asyncpg.connect(settings.asyncpg_dsn)
         try:
@@ -66,7 +67,8 @@ async def ingest_status() -> BaseResponse:
 
 @router.post("/retry", response_model=BaseResponse[RetryStartedResponse])
 async def retry_failed(
-    req: RetryRequest, background_tasks: BackgroundTasks
+    req: RetryRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     # Create job records for both platforms
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -198,6 +200,7 @@ async def list_jobs(
     offset: int = Query(default=0, ge=0),
     platform: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     try:
 
@@ -235,7 +238,7 @@ async def list_jobs(
 
 
 @router.get("/jobs/{job_id}", response_model=BaseResponse[JobDetail])
-async def get_job(job_id: str) -> BaseResponse:
+async def get_job(job_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     try:
         conn = await asyncpg.connect(settings.asyncpg_dsn)
         try:
@@ -274,6 +277,7 @@ async def get_job_items(
     job_id: str,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     try:
         conn = await asyncpg.connect(settings.asyncpg_dsn)
@@ -308,7 +312,7 @@ async def get_job_items(
 
 
 @router.post("/jobs/{job_id}/pause", response_model=BaseResponse[JobControlResponse])
-async def pause_job(job_id: str) -> BaseResponse:
+async def pause_job(job_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     from app.ingest.common.job_tracker import JobTracker
 
     try:
@@ -343,7 +347,7 @@ async def pause_job(job_id: str) -> BaseResponse:
 
 
 @router.post("/jobs/{job_id}/resume", response_model=BaseResponse[JobControlResponse])
-async def resume_job(job_id: str) -> BaseResponse:
+async def resume_job(job_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     from app.ingest.common.job_tracker import JobTracker
 
     try:
@@ -378,7 +382,7 @@ async def resume_job(job_id: str) -> BaseResponse:
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=BaseResponse[JobControlResponse])
-async def cancel_job(job_id: str) -> BaseResponse:
+async def cancel_job(job_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     from app.ingest.common.job_tracker import JobTracker
 
     try:
@@ -420,6 +424,7 @@ async def get_job_data(
     job_id: str,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     """Fetch actual ingested user data for all successfully processed items in a job."""
     try:
@@ -463,7 +468,7 @@ async def get_job_data(
 
 
 @router.get("/jobs/{job_id}/data/{login}", response_model=BaseResponse[dict[str, Any]])
-async def get_job_user_data(job_id: str, login: str) -> BaseResponse:
+async def get_job_user_data(job_id: str, login: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Fetch full ingested data for a single user processed in a job."""
     try:
         conn = await asyncpg.connect(settings.asyncpg_dsn)

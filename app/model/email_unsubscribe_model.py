@@ -5,7 +5,7 @@ from sqlalchemy import TIMESTAMP, Column, String, Text, func
 from app.db.base import Base
 
 
-def generate_prefixed_uuid():
+def generate_prefixed_uuid() -> str:
     return f"unsub_{uuid.uuid4()}"
 
 

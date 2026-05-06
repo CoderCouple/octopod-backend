@@ -8,6 +8,7 @@ for startup/shutdown events.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Manage application startup and shutdown lifecycle events."""
     logger.info(f"Starting {settings.app_name}")
     logger.info(f"Environment: {settings.environment}")
@@ -65,7 +66,7 @@ async def lifespan(app: FastAPI):
         try:
             from app.db.opensearch_client import ensure_index
 
-            ensure_index()
+            await ensure_index()
         except Exception:
             logger.warning("OpenSearch index setup skipped (OpenSearch may be unavailable)")
 
@@ -139,7 +140,7 @@ app.include_router(tracking_router)
 
 
 @app.get("/")
-async def root():
+async def root() -> dict[str, str]:
     """
     Root endpoint returning application metadata.
 

@@ -144,6 +144,8 @@ class EmailSendingService:
             return await self._send_outlook(mailbox, message, body_html)
         elif mailbox.provider == MailboxProvider.SMTP.value:
             return await self._send_smtp(mailbox, message, body_html)
+        elif mailbox.provider == MailboxProvider.SES.value:
+            return await self._send_ses(mailbox, message, body_html)
         return False
 
     async def _send_gmail(
@@ -253,6 +255,29 @@ class EmailSendingService:
             message.error_message = f"SMTP error: {str(e)[:200]}"
             return False
 
+    async def _send_ses(
+        self, mailbox: Mailbox, message: EmailMessage, body_html: str
+    ) -> bool:
+        """Send via AWS SES through the SQS queue."""
+        from app.service.sqs_publisher import SqsPublisher
+
+        publisher = SqsPublisher()
+        payload = {
+            "messageId": message.id,
+            "to": message.to_email,
+            "subject": message.subject,
+            "bodyHtml": body_html,
+            "bodyText": message.body_text or "",
+            "senderEmail": message.from_email,
+            "senderName": message.from_name or "",
+            "trackingId": message.tracking_id,
+        }
+        msg_id = await publisher.publish(payload)
+        if msg_id:
+            message.provider_message_id = msg_id
+            return True
+        return False
+
     async def _handle_failure(self, message: EmailMessage) -> None:
         """Handle a send failure with retry logic."""
         message.retry_count += 1
@@ -281,5 +306,6 @@ def _provider_for_mailbox(mailbox: Mailbox) -> str:
         MailboxProvider.GMAIL.value: SendProvider.GMAIL_API.value,
         MailboxProvider.OUTLOOK.value: SendProvider.OUTLOOK_GRAPH.value,
         MailboxProvider.SMTP.value: SendProvider.SMTP.value,
+        MailboxProvider.SES.value: SendProvider.AWS_SES.value,
     }
     return mapping.get(mailbox.provider, SendProvider.SMTP.value)

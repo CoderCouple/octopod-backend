@@ -13,6 +13,7 @@ class MailboxProvider(str, Enum):
     GMAIL = "gmail"
     OUTLOOK = "outlook"
     SMTP = "smtp"
+    SES = "ses"
 
 
 class MailboxStatus(str, Enum):
@@ -171,3 +172,4 @@ class SendProvider(str, Enum):
     OUTLOOK_GRAPH = "outlook_graph"
     SMTP = "smtp"
     SENDGRID = "sendgrid"
+    AWS_SES = "aws_ses"

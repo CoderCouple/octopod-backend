@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.request.mailbox_request import (
     ConnectGmailRequest,
     ConnectOutlookRequest,
+    ConnectSesRequest,
     ConnectSmtpRequest,
     UpdateMailboxRequest,
 )
@@ -154,6 +155,26 @@ class MailboxService:
         mailbox = await self.repo.create(mailbox)
         return MailboxResponse.model_validate(mailbox)
 
+    async def connect_ses(
+        self, data: ConnectSesRequest, owner_id: str, actor_id: str | None = None
+    ) -> MailboxResponse:
+        """Create a mailbox backed by AWS SES."""
+        existing = await self.repo.get_by_email(data.email_address)
+        if existing:
+            raise DuplicateEntityError("Mailbox", "email_address", data.email_address)
+
+        mailbox = Mailbox(
+            owner_id=owner_id,
+            provider=MailboxProvider.SES.value,
+            email_address=data.email_address,
+            display_name=data.display_name,
+            status=MailboxStatus.CONNECTED.value,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        mailbox = await self.repo.create(mailbox)
+        return MailboxResponse.model_validate(mailbox)
+
     async def get_mailbox(self, mailbox_id: str) -> MailboxResponse:
         mailbox = await self.repo.get_by_id(mailbox_id)
         if not mailbox:
@@ -289,5 +310,26 @@ class MailboxService:
             if token:
                 return {"success": True, "message": "Outlook OAuth token valid"}
             return {"success": False, "message": "Failed to refresh Outlook token"}
+
+        elif mailbox.provider == MailboxProvider.SES.value:
+            try:
+                import aioboto3
+
+                session = aioboto3.Session()
+                async with session.client("ses", region_name=settings.cognito_region) as ses:
+                    resp = await ses.get_identity_verification_attributes(
+                        Identities=[mailbox.email_address]
+                    )
+                    attrs = resp.get("VerificationAttributes", {})
+                    identity = attrs.get(mailbox.email_address, {})
+                    status = identity.get("VerificationStatus", "NotStarted")
+                    if status == "Success":
+                        return {"success": True, "message": "SES identity verified"}
+                    return {
+                        "success": False,
+                        "message": f"SES identity status: {status}",
+                    }
+            except Exception as e:
+                return {"success": False, "message": str(e)}
 
         return {"success": False, "message": "Unknown provider"}

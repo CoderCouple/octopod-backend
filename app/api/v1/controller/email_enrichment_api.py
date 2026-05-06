@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.tags import Tags
 from app.api.v1.response.base_response import BaseResponse, success_response
+from app.common.auth.auth import get_actor_id_required
 from app.db.session import get_db
 from app.service.email_enrichment_service import EmailEnrichmentService
 
@@ -27,6 +28,7 @@ class EnrichmentResponse:
 @router.post("/email-enrichment/{profile_id}", response_model=BaseResponse[dict])
 async def enrich_profile(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: EmailEnrichmentService = Depends(get_enrichment_service),
 ):
     """Find email for a single developer profile."""
@@ -46,6 +48,7 @@ async def enrich_profile(
 @router.post("/email-enrichment/batch", response_model=BaseResponse[list[dict]])
 async def enrich_batch(
     profile_ids: list[str],
+    _actor_id: str = Depends(get_actor_id_required),
     service: EmailEnrichmentService = Depends(get_enrichment_service),
 ):
     """Find emails for multiple developer profiles."""
@@ -66,6 +69,7 @@ async def enrich_batch(
 @router.get("/email-enrichment/{profile_id}", response_model=BaseResponse[dict])
 async def get_enrichment_status(
     profile_id: str,
+    _actor_id: str = Depends(get_actor_id_required),
     service: EmailEnrichmentService = Depends(get_enrichment_service),
 ):
     """Check enrichment status for a developer profile."""

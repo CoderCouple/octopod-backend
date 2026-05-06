@@ -141,6 +141,12 @@ class Settings(BaseSettings):
     reply_check_interval: int = 300
     token_encryption_key: str = ""
 
+    # AWS SES / SQS
+    aws_region: str = "us-west-2"
+    ses_from_email: str = ""
+    sqs_email_queue_url: str = ""
+    sqs_email_message_group: str = "octopod-email-group"
+
     @property
     def cognito_jwks_url(self) -> str:
         return (

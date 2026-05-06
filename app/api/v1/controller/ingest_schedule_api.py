@@ -4,12 +4,13 @@ from __future__ import annotations
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.tags import Tags
 from app.api.v1.request.ingest_request import ScheduleCreateRequest, ScheduleUpdateRequest
 from app.api.v1.response.base_response import BaseResponse, error_response, success_response
 from app.api.v1.response.ingest_response import ScheduleDeleteResponse, ScheduleResponse
+from app.common.auth.auth import get_actor_id_required
 from app.common.ingest_common import _serialize_row
 from app.settings import settings
 
@@ -20,7 +21,7 @@ router = APIRouter(prefix="/ingest", tags=[Tags.Ingestion])
 
 
 @router.post("/schedule", response_model=BaseResponse[ScheduleResponse])
-async def schedule_create(req: ScheduleCreateRequest) -> BaseResponse:
+async def schedule_create(req: ScheduleCreateRequest, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Create a pipeline schedule."""
     import json
     import uuid
@@ -65,7 +66,7 @@ async def schedule_create(req: ScheduleCreateRequest) -> BaseResponse:
 
 
 @router.get("/schedules", response_model=BaseResponse[list[ScheduleResponse]])
-async def schedule_list() -> BaseResponse:
+async def schedule_list(_actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """List all pipeline schedules."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -85,7 +86,7 @@ async def schedule_list() -> BaseResponse:
 
 
 @router.put("/schedule/{schedule_id}", response_model=BaseResponse[ScheduleResponse])
-async def schedule_update(schedule_id: str, req: ScheduleUpdateRequest) -> BaseResponse:
+async def schedule_update(schedule_id: str, req: ScheduleUpdateRequest, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Update a pipeline schedule."""
     import json
     from datetime import datetime, timezone
@@ -163,7 +164,7 @@ async def schedule_update(schedule_id: str, req: ScheduleUpdateRequest) -> BaseR
 
 
 @router.delete("/schedule/{schedule_id}", response_model=BaseResponse[ScheduleDeleteResponse])
-async def schedule_delete(schedule_id: str) -> BaseResponse:
+async def schedule_delete(schedule_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Delete a pipeline schedule."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)

@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 
 from app.api.tags import Tags
 from app.api.v1.request.ingest_request import IdentityResolveRequest
@@ -19,6 +19,7 @@ from app.api.v1.response.ingest_response import (
     MergeCandidateSummary,
     MergeRejectResponse,
 )
+from app.common.auth.auth import get_actor_id_required
 from app.common.enum.ingest import IngestJobType, IngestTrigger
 from app.common.ingest_common import _serialize_row
 from app.settings import settings
@@ -37,6 +38,7 @@ async def identity_candidates_list(
     min_score: float | None = Query(default=None, ge=0, le=1),
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     """List merge candidates with optional filters."""
     try:
@@ -85,7 +87,7 @@ async def identity_candidates_list(
 
 
 @router.get("/identity/candidates/{candidate_id}", response_model=BaseResponse[MergeCandidateDetail])
-async def identity_candidate_detail(candidate_id: str) -> BaseResponse:
+async def identity_candidate_detail(candidate_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Get merge candidate detail with profile previews and signals."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -130,7 +132,7 @@ async def identity_candidate_detail(candidate_id: str) -> BaseResponse:
 
 
 @router.post("/identity/candidates/{candidate_id}/approve", response_model=BaseResponse[MergeApproveResponse])
-async def identity_candidate_approve(candidate_id: str) -> BaseResponse:
+async def identity_candidate_approve(candidate_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Approve a merge candidate and execute the merge."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=3)
@@ -178,7 +180,7 @@ async def identity_candidate_approve(candidate_id: str) -> BaseResponse:
 
 
 @router.post("/identity/candidates/{candidate_id}/reject", response_model=BaseResponse[MergeRejectResponse])
-async def identity_candidate_reject(candidate_id: str) -> BaseResponse:
+async def identity_candidate_reject(candidate_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Reject a merge candidate."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -212,7 +214,8 @@ async def identity_candidate_reject(candidate_id: str) -> BaseResponse:
 
 @router.post("/identity/resolve", response_model=BaseResponse[JobStartedResponse])
 async def identity_resolve_trigger(
-    req: IdentityResolveRequest, background_tasks: BackgroundTasks
+    req: IdentityResolveRequest, background_tasks: BackgroundTasks,
+    _actor_id: str = Depends(get_actor_id_required),
 ) -> BaseResponse:
     """Trigger identity resolution as a background task."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -270,7 +273,7 @@ async def identity_resolve_trigger(
 
 
 @router.get("/identity/stats", response_model=BaseResponse[IdentityStatsResponse])
-async def identity_stats() -> BaseResponse:
+async def identity_stats(_actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
     """Get identity resolution stats: counts by status, average scores."""
     try:
         pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)

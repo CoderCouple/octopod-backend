@@ -27,6 +27,13 @@ class ConnectSmtpRequest(BaseModel):
     smtp_use_tls: bool = Field(default=True)
 
 
+class ConnectSesRequest(BaseModel):
+    """Request to connect an AWS SES mailbox."""
+
+    email_address: str = Field(..., max_length=320)
+    display_name: str | None = Field(default=None, max_length=255)
+
+
 class UpdateMailboxRequest(BaseModel):
     """Request to update a mailbox's settings."""
 
