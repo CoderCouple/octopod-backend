@@ -19,7 +19,7 @@ from app.api.v1.request.ingest_request import (
 )
 from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.ingest_response import GHFilterResponse, JobStartedResponse
-from app.common.auth.auth import get_actor_id_required
+from app.common.auth.auth import UserContext, get_user_context
 from app.common.enum.ingest import IngestJobType, IngestTrigger
 from app.settings import settings
 
@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 @router.post("/gh/discover", response_model=BaseResponse[JobStartedResponse])
 async def gh_discover(
     req: GHDiscoverRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -121,7 +121,7 @@ async def gh_discover(
 @router.post("/gh/run", response_model=BaseResponse[JobStartedResponse])
 async def gh_run(
     req: IngestRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -187,7 +187,7 @@ async def gh_run(
 
 @router.post("/gh/filter", response_model=BaseResponse[GHFilterResponse])
 async def gh_filter(
-    req: GHFilterRequest, _actor_id: str = Depends(get_actor_id_required),
+    req: GHFilterRequest, _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Query already-ingested GitHub users by activity and profile criteria.
 
@@ -300,7 +300,7 @@ async def gh_filter(
 @router.post("/hf/discover", response_model=BaseResponse[JobStartedResponse])
 async def hf_discover(
     req: HFDiscoverRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -366,7 +366,7 @@ async def hf_discover(
 @router.post("/hf/run", response_model=BaseResponse[JobStartedResponse])
 async def hf_run(
     req: IngestRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
     try:
@@ -431,7 +431,7 @@ async def hf_run(
 @router.post("/ln/discover", response_model=BaseResponse[JobStartedResponse])
 async def ln_discover(
     background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Extract LinkedIn URLs from GH/HF data."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -497,7 +497,7 @@ async def ln_discover(
 @router.post("/ln/run", response_model=BaseResponse[JobStartedResponse])
 async def ln_run(
     req: LNIngestRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Trigger LinkedIn profile ingestion via Proxycurl."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -569,7 +569,7 @@ async def ln_run(
 @router.post("/profile", response_model=BaseResponse[JobStartedResponse])
 async def ingest_profile(
     req: ManualProfileRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Ingest a single person from provided platform links and run the full merge pipeline."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)

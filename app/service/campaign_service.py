@@ -25,6 +25,7 @@ from app.api.v1.response.email_campaign_response import (
     EmailCampaignResponse,
     EmailMessageResponse,
 )
+from app.common.billing.plan_enforcement import PlanEnforcer
 from app.common.enum.email import CampaignStatus, MessageStatus, RecipientStatus
 from app.common.exceptions import EntityNotFoundError, InvalidStateTransitionError
 from app.db.repository.campaign_recipient_repository import CampaignRecipientRepository
@@ -33,6 +34,7 @@ from app.db.repository.email_campaign_repository import EmailCampaignRepository
 from app.db.repository.email_message_repository import EmailMessageRepository
 from app.db.repository.email_template_repository import EmailTemplateRepository
 from app.db.repository.mailbox_repository import MailboxRepository
+from app.db.repository.organization_repository import OrganizationRepository
 from app.model.campaign_recipient_model import CampaignRecipient
 from app.model.campaign_step_model import CampaignStep
 from app.model.email_campaign_model import EmailCampaign
@@ -68,12 +70,20 @@ class CampaignService:
         self.message_repo = EmailMessageRepository(db)
         self.template_repo = EmailTemplateRepository(db)
         self.mailbox_repo = MailboxRepository(db)
+        self.org_repo = OrganizationRepository(db)
+        self.enforcer = PlanEnforcer(db)
 
     # ── Campaign CRUD ──────────────────────────────────────────
 
     async def create_campaign(
-        self, data: CreateCampaignRequest, owner_id: str, actor_id: str | None = None
+        self, data: CreateCampaignRequest, owner_id: str, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> EmailCampaignResponse:
+        if org_id and project_id:
+            org = await self.org_repo.get_by_id(org_id)
+            plan = org.plan if org else "free"
+            await self.enforcer.check_campaigns(plan, project_id)
+
         mailbox = await self.mailbox_repo.get_by_id(data.mailbox_id)
         if not mailbox:
             raise EntityNotFoundError("Mailbox", data.mailbox_id)
@@ -83,6 +93,7 @@ class CampaignService:
 
         campaign = EmailCampaign(
             owner_id=owner_id,
+            project_id=project_id,
             mailbox_id=data.mailbox_id,
             name=data.name,
             description=data.description,
@@ -109,9 +120,15 @@ class CampaignService:
         return EmailCampaignResponse.model_validate(campaign)
 
     async def list_campaigns(
-        self, owner_id: str, offset: int = 0, limit: int = 20
+        self, owner_id: str, offset: int = 0, limit: int = 20,
+        project_id: str | None = None,
     ) -> tuple[list[EmailCampaignResponse], int]:
-        campaigns, total = await self.campaign_repo.list_by_owner(owner_id, offset, limit)
+        if project_id:
+            campaigns, total = await self.campaign_repo.list_by_project(
+                project_id, offset, limit
+            )
+        else:
+            campaigns, total = await self.campaign_repo.list_by_owner(owner_id, offset, limit)
         return [EmailCampaignResponse.model_validate(c) for c in campaigns], total
 
     async def update_campaign(

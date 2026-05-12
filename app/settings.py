@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     postgres_db: str = "octopod_db"
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    db_ssl_require: bool = False  # set to True for AWS RDS
 
     # API Configuration
     api_prefix: str = "/api/v1"
@@ -141,6 +142,12 @@ class Settings(BaseSettings):
     reply_check_interval: int = 300
     token_encryption_key: str = ""
 
+    # Stripe
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+    stripe_price_id_pro: str = ""
+    stripe_price_id_enterprise: str = ""
+
     # AWS SES / SQS
     aws_region: str = "us-west-2"
     ses_from_email: str = ""
@@ -165,6 +172,7 @@ class Settings(BaseSettings):
         env_file=_detect_env_file(),
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     @property
@@ -177,16 +185,26 @@ class Settings(BaseSettings):
     def asyncpg_dsn(self) -> str:
         """Direct asyncpg DSN for bulk ingestion (no SQLAlchemy prefix)."""
         if self.database_url:
-            return self.database_url.replace("postgresql+asyncpg://", "postgresql://")
-        return (
-            f"postgresql://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
-        )
+            url = self.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        else:
+            url = (
+                f"postgresql://{self.postgres_user}:{self.postgres_password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            )
+        if self.db_ssl_require:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}ssl=require"
+        return url
 
     @property
     def sync_database_url(self) -> str:
         if self.database_url:
-            return self.database_url.replace("postgresql://", "postgresql+psycopg://")
-        return f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            url = self.database_url.replace("postgresql://", "postgresql+psycopg://")
+        else:
+            url = f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        if self.db_ssl_require:
+            sep = "&" if "?" in url else "?"
+            url = f"{url}{sep}sslmode=require"
+        return url
 
 settings = Settings()

@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.model.aggregated_individual_profile_model import AggregatedIndividualProfile  # noqa: F401
+from app.model.billing_event_model import BillingEvent  # noqa: F401
 from app.model.campaign_recipient_model import CampaignRecipient  # noqa: F401
 from app.model.campaign_step_model import CampaignStep  # noqa: F401
 from app.model.cohesive_individual_profile_model import CohesiveIndividualProfile  # noqa: F401
@@ -25,10 +26,32 @@ from app.model.email_unsubscribe_model import EmailUnsubscribe  # noqa: F401
 # Email outreach models
 from app.model.mailbox_model import Mailbox  # noqa: F401
 from app.model.merge_audit_log_model import MergeAuditLog  # noqa: F401
+
+# Multi-tenant models
+from app.model.org_membership_model import OrgMembership  # noqa: F401
+from app.model.organization_model import Organization  # noqa: F401
 from app.model.profile_ranking_model import ProfileRanking  # noqa: F401
+from app.model.project_model import Project  # noqa: F401
 from app.model.social_profile_model import SocialProfile  # noqa: F401
+from app.model.subscription_model import Subscription  # noqa: F401
+from app.model.user_model import User  # noqa: F401
 
 ASYNC_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True)
+def disable_plan_enforcement(monkeypatch):
+    """Disable Stripe-backed plan enforcement in tests.
+
+    Plan limits only apply when `stripe_secret_key` is configured.
+    Existing tests pre-date plan limits and create N resources that
+    exceed free-plan limits, so we unset the key to bypass enforcement.
+    Tests that specifically exercise billing behavior set their own
+    Stripe mocks.
+    """
+    from app.settings import settings
+
+    monkeypatch.setattr(settings, "stripe_secret_key", "")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -99,7 +122,10 @@ FAKE_COGNITO_CLAIMS = {
 
 @pytest_asyncio.fixture(scope="function")
 async def authenticated_client(async_engine) -> AsyncGenerator[AsyncClient, None]:
-    """AsyncClient with Cognito JWT validation mocked — requests appear authenticated."""
+    """AsyncClient with Cognito JWT validation mocked — requests appear authenticated.
+
+    Auto-provisions user + org + project so get_user_context works.
+    """
     from app.common.auth.cognito import get_current_user, get_current_user_optional
     from app.db.session import get_db
     from app.main import app

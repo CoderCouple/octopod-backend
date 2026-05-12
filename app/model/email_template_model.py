@@ -15,6 +15,7 @@ class EmailTemplate(Base):
 
     id = Column(String(), primary_key=True, default=generate_prefixed_uuid, nullable=False)
     owner_id = Column(String(), nullable=False, index=True)
+    project_id = Column(String(), nullable=True, index=True)
     name = Column(String(255), nullable=False)
     category = Column(String(100), nullable=True)
     subject = Column(Text(), nullable=False)

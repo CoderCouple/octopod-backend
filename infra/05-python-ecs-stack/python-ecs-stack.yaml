@@ -43,6 +43,10 @@ Parameters:
     Type: String
     Default: octopodai-dev-hf-tokens-stack
     AllowedPattern: \S+
+  StripeStackName:
+    Type: String
+    Default: octopodai-dev-stripe-stack
+    AllowedPattern: \S+
   DomainName:
     Type: String
     Default: octopodai.app
@@ -121,6 +125,8 @@ Resources:
                     'Fn::Sub': '${GitHubTokensStackName}-GitHubTokensSecretArn'
                   - !ImportValue
                     'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${StripeStackName}-StripeSecretArn'
 
   # ---------------------------------------------------------------------------
   # IAM — Task Role (container runtime permissions)
@@ -163,6 +169,8 @@ Resources:
                     'Fn::Sub': '${GitHubTokensStackName}-GitHubTokensSecretArn'
                   - !ImportValue
                     'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
+                  - !ImportValue
+                    'Fn::Sub': '${StripeStackName}-StripeSecretArn'
 
   # ---------------------------------------------------------------------------
   # CloudWatch Log Group
@@ -237,6 +245,8 @@ Resources:
             - Name: POSTGRES_DB
               Value: !ImportValue
                 'Fn::Sub': '${DBStackName}-DBName'
+            - Name: DB_SSL_REQUIRE
+              Value: 'true'
             - Name: EMBEDDING_MODEL
               Value: all-MiniLM-L6-v2
             - Name: EMBEDDING_PROVIDER
@@ -324,6 +334,30 @@ Resources:
                 - - !ImportValue
                       'Fn::Sub': '${HFTokensStackName}-HFTokensSecretArn'
                   - ':tokens::'
+            - Name: STRIPE_SECRET_KEY
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${StripeStackName}-StripeSecretArn'
+                  - ':secret_key::'
+            - Name: STRIPE_WEBHOOK_SECRET
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${StripeStackName}-StripeSecretArn'
+                  - ':webhook_secret::'
+            - Name: STRIPE_PRICE_ID_PRO
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${StripeStackName}-StripeSecretArn'
+                  - ':price_id_pro::'
+            - Name: STRIPE_PRICE_ID_ENTERPRISE
+              ValueFrom: !Join
+                - ''
+                - - !ImportValue
+                      'Fn::Sub': '${StripeStackName}-StripeSecretArn'
+                  - ':price_id_enterprise::'
 
           LogConfiguration:
             LogDriver: awslogs

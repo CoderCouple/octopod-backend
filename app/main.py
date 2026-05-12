@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import router as api_router
+from app.api.v1.controller.billing_webhook_api import router as stripe_webhook_router
 from app.api.v1.controller.email_tracking_api import router as tracking_router
 from app.common.exceptions import register_exception_handlers
 from app.settings import settings
@@ -137,6 +138,9 @@ app.include_router(api_router)
 
 # Tracking routes mounted at root (short URLs, not behind /api/v1)
 app.include_router(tracking_router)
+
+# Stripe webhook at root — no JWT auth, uses Stripe signature verification
+app.include_router(stripe_webhook_router)
 
 
 @app.get("/")

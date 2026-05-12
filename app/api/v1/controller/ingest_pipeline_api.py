@@ -19,7 +19,7 @@ from app.api.v1.response.ingest_response import (
     PipelineResumeResponse,
     PipelineStartedResponse,
 )
-from app.common.auth.auth import get_actor_id_required
+from app.common.auth.auth import UserContext, get_user_context
 from app.common.enum.ingest import IngestJobType, IngestTrigger
 from app.common.ingest_common import _serialize_row
 from app.settings import settings
@@ -37,7 +37,7 @@ _FULL_PIPELINE_TYPES = {"daily", "weekly", "seed", "dependent"}
 @router.post("/sync", response_model=BaseResponse[JobStartedResponse])
 async def trigger_sync(
     req: SyncRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Trigger bridge sync: raw -> domain -> aggregated -> cohesive."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -101,7 +101,7 @@ async def trigger_sync(
 @router.post("/embed", response_model=BaseResponse[JobStartedResponse])
 async def trigger_embed(
     req: EmbedRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Trigger batch embedding to Qdrant + optionally OpenSearch."""
     pool = await asyncpg.create_pool(settings.asyncpg_dsn, min_size=1, max_size=2)
@@ -189,7 +189,7 @@ async def _run_embed(job_id: str, req: EmbedRequest) -> None:
 @router.post("/pipeline/start", response_model=BaseResponse[PipelineStartedResponse])
 async def pipeline_start(
     req: PipelineStartRequest, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Start a pipeline. Full pipelines block each other; individual runs can be parallel."""
     from app.ingest.pipeline.tracker import PipelineTracker
@@ -238,7 +238,7 @@ async def pipeline_start(
 
 
 @router.get("/pipeline/active", response_model=BaseResponse[list[dict[str, Any]]])  # dynamic execution shape
-async def pipeline_active(_actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
+async def pipeline_active(_ctx: UserContext = Depends(get_user_context)) -> BaseResponse:
     """Get currently running/paused pipelines."""
     try:
         from app.ingest.pipeline.tracker import PipelineTracker
@@ -254,7 +254,7 @@ async def pipeline_active(_actor_id: str = Depends(get_actor_id_required)) -> Ba
 
 
 @router.get("/pipeline/{execution_id}", response_model=BaseResponse[dict[str, Any]])  # dynamic execution shape
-async def pipeline_get(execution_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
+async def pipeline_get(execution_id: str, _ctx: UserContext = Depends(get_user_context)) -> BaseResponse:
     """Full execution details with all steps + live progress counts."""
     try:
         from app.ingest.pipeline.tracker import PipelineTracker
@@ -278,7 +278,7 @@ async def pipeline_get(execution_id: str, _actor_id: str = Depends(get_actor_id_
 
 
 @router.post("/pipeline/{execution_id}/pause", response_model=BaseResponse[PipelineControlResponse])
-async def pipeline_pause(execution_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
+async def pipeline_pause(execution_id: str, _ctx: UserContext = Depends(get_user_context)) -> BaseResponse:
     """Set pause signal -- current step finishes, then execution pauses."""
     try:
         from app.ingest.pipeline.tracker import PipelineTracker
@@ -301,7 +301,7 @@ async def pipeline_pause(execution_id: str, _actor_id: str = Depends(get_actor_i
 @router.post("/pipeline/{execution_id}/resume", response_model=BaseResponse[PipelineResumeResponse])
 async def pipeline_resume(
     execution_id: str, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Resume a paused pipeline from the next pending step."""
     from app.ingest.pipeline.tracker import PipelineTracker
@@ -380,7 +380,7 @@ async def pipeline_resume(
 
 
 @router.post("/pipeline/{execution_id}/cancel", response_model=BaseResponse[PipelineControlResponse])
-async def pipeline_cancel(execution_id: str, _actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
+async def pipeline_cancel(execution_id: str, _ctx: UserContext = Depends(get_user_context)) -> BaseResponse:
     """Set cancel signal -- current step finishes, remaining steps skip."""
     try:
         from app.ingest.pipeline.tracker import PipelineTracker
@@ -403,7 +403,7 @@ async def pipeline_cancel(execution_id: str, _actor_id: str = Depends(get_actor_
 @router.post("/pipeline/{execution_id}/rerun", response_model=BaseResponse[PipelineRerunResponse])
 async def pipeline_rerun(
     execution_id: str, background_tasks: BackgroundTasks,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
 ) -> BaseResponse:
     """Create a new execution with the same config as a previous one."""
     from app.ingest.pipeline.tracker import PipelineTracker
@@ -447,7 +447,7 @@ async def pipeline_rerun(
 
 
 @router.get("/pipeline/status", response_model=BaseResponse[PipelineHealthResponse])
-async def pipeline_status(_actor_id: str = Depends(get_actor_id_required)) -> BaseResponse:
+async def pipeline_status(_ctx: UserContext = Depends(get_user_context)) -> BaseResponse:
     """Full pipeline health: latest job per type, checkpoint counts, index stats."""
     try:
         conn = await asyncpg.connect(settings.asyncpg_dsn)

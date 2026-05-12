@@ -15,12 +15,12 @@ from app.api.v1.response.email_template_response import (
     EmailTemplateResponse,
     TemplatePreviewResponse,
 )
-from app.common.auth.auth import get_actor_id_required
+from app.common.auth.auth import UserContext, get_user_context
 from app.common.exceptions import EntityNotFoundError
 from app.common.pagination import PaginatedResponse
 from app.db.repository.email_template_repository import EmailTemplateRepository
 from app.db.session import get_db
-from app.model.email_template_model import EmailTemplate
+from app.model.email_template_model import EmailTemplate as EmailTemplateModel
 
 router = APIRouter(tags=[Tags.EmailTemplate])
 
@@ -34,13 +34,13 @@ def get_repo(db: AsyncSession = Depends(get_db)) -> EmailTemplateRepository:
 )
 async def create_template(
     body: CreateEmailTemplateRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Create a new email template."""
-    owner_id = actor_id
-    template = EmailTemplate(
-        owner_id=owner_id,
+    template = EmailTemplateModel(
+        owner_id=ctx.actor_id,
+        project_id=ctx.project_id,
         name=body.name,
         category=body.category,
         subject=body.subject,
@@ -48,8 +48,8 @@ async def create_template(
         body_text=body.body_text,
         variables=body.variables or [],
         metadata_=body.metadata or {},
-        created_by=actor_id,
-        updated_by=actor_id,
+        created_by=ctx.user_id,
+        updated_by=ctx.user_id,
     )
     template = await repo.create(template)
     return success_response(
@@ -65,15 +65,14 @@ async def list_templates(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
     category: str | None = Query(default=None),
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
-    """List email templates."""
-    owner_id = actor_id
+    """List email templates in the current project."""
     if category:
-        templates, total = await repo.get_by_category(owner_id, category, offset, limit)
+        templates, total = await repo.get_by_category(ctx.actor_id, category, offset, limit)
     else:
-        templates, total = await repo.list_by_owner(owner_id, offset, limit)
+        templates, total = await repo.list_by_project(ctx.project_id, offset, limit)
     items = [EmailTemplateResponse.model_validate(t) for t in templates]
     page = PaginatedResponse(items=items, total=total, offset=offset, limit=limit)
     return success_response(page, "Templates fetched")
@@ -82,7 +81,7 @@ async def list_templates(
 @router.get("/email-template/{template_id}", response_model=BaseResponse[EmailTemplateResponse])
 async def get_template(
     template_id: str,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Retrieve a single template."""
@@ -98,7 +97,7 @@ async def get_template(
 async def update_template(
     template_id: str,
     body: UpdateEmailTemplateRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Update an email template."""
@@ -113,7 +112,7 @@ async def update_template(
         update_data["metadata_"] = update_data.pop("metadata")
     for key, value in update_data.items():
         setattr(template, key, value)
-    template.updated_by = actor_id
+    template.updated_by = ctx.user_id
     template.updated_at = datetime.now(timezone.utc)
     template = await repo.update(template)
     return success_response(EmailTemplateResponse.model_validate(template), "Template updated")
@@ -122,14 +121,14 @@ async def update_template(
 @router.delete("/email-template/{template_id}", response_model=BaseResponse)
 async def delete_template(
     template_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Soft-delete a template."""
     template = await repo.get_by_id(template_id)
     if not template:
         raise EntityNotFoundError("EmailTemplate", template_id)
-    await repo.soft_delete(template, actor_id)
+    await repo.soft_delete(template, ctx.user_id)
     return success_response(None, "Template deleted")
 
 
@@ -140,7 +139,7 @@ async def delete_template(
 async def preview_template(
     template_id: str,
     body: PreviewTemplateRequest,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     repo: EmailTemplateRepository = Depends(get_repo),
 ):
     """Render a template preview with sample variables."""

@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession

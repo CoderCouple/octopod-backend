@@ -14,6 +14,7 @@ class DeveloperProfile(Base):
     __tablename__ = "developer_profile"
 
     id = Column(String(), primary_key=True, default=generate_prefixed_uuid, nullable=False)
+    project_id = Column(String(), nullable=True, index=True)
     github_username = Column(String(255), nullable=True, unique=True)
     huggingface_username = Column(String(255), nullable=True, unique=True)
     email_hint = Column(String(320), nullable=True)

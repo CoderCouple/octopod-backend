@@ -61,6 +61,29 @@ class InvalidStateTransitionError(HTTPException):
         )
 
 
+class PlanLimitExceededError(HTTPException):
+    """Raised when a plan limit has been reached.
+
+    Returns HTTP 402 Payment Required.
+
+    Args:
+        resource: The type of resource being limited (e.g. ``"mailboxes"``).
+        current: The current count of that resource.
+        maximum: The plan's maximum for that resource.
+        plan: The current plan tier name.
+    """
+
+    def __init__(self, resource: str, current: int, maximum: int, plan: str):
+        super().__init__(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=(
+                f"Plan limit reached for {resource}: "
+                f"{current}/{maximum} on '{plan}' plan. "
+                f"Upgrade your plan to increase this limit."
+            ),
+        )
+
+
 class DuplicateEntityError(HTTPException):
     """Raised when a unique-constraint violation is detected.
 

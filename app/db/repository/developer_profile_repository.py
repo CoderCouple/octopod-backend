@@ -41,6 +41,23 @@ class DeveloperProfileRepository:
         result = await self.db.execute(query)
         return result.scalar_one_or_none()
 
+    async def list_by_project(
+        self, project_id: str, offset: int = 0, limit: int = 20
+    ) -> tuple[list[DeveloperProfile], int]:
+        base = select(DeveloperProfile).where(
+            DeveloperProfile.project_id == project_id,
+            DeveloperProfile.is_deleted == False,  # noqa: E712
+        )
+        count_result = await self.db.execute(
+            select(func.count()).select_from(base.subquery())
+        )
+        total = count_result.scalar() or 0
+
+        result = await self.db.execute(
+            base.order_by(DeveloperProfile.created_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
     async def list_all(
         self, offset: int = 0, limit: int = 20
     ) -> tuple[list[DeveloperProfile], int]:

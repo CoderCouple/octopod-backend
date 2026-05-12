@@ -40,6 +40,10 @@
     "ParameterValue": "octopodai-dev-hf-tokens-stack"
   },
   {
+    "ParameterKey": "StripeStackName",
+    "ParameterValue": "octopodai-dev-stripe-stack"
+  },
+  {
     "ParameterKey": "DomainName",
     "ParameterValue": "octopodai.app"
   },

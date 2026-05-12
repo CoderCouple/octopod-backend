@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Secrets Manager secret for Stripe API keys and configuration
+
+Parameters:
+  ProjectName:
+    Description: Project Name to identify stack and infrastructure
+    Type: String
+  Environment:
+    Description: Environment to deploy the Stack
+    Type: String
+    AllowedValues:
+      - prod
+      - dev
+  StripeSecretKey:
+    Description: Stripe secret API key (sk_test_... or sk_live_...)
+    Type: String
+    NoEcho: true
+  StripeWebhookSecret:
+    Description: Stripe webhook signing secret (whsec_...)
+    Type: String
+    NoEcho: true
+  StripePriceIdPro:
+    Description: Stripe Price ID for the Pro plan
+    Type: String
+  StripePriceIdEnterprise:
+    Description: Stripe Price ID for the Enterprise plan
+    Type: String
+
+Resources:
+
+  StripeSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '${ProjectName}-${Environment}-stripe'
+      Description: Stripe API keys and configuration
+      SecretString: !Sub |
+        {
+          "secret_key": "${StripeSecretKey}",
+          "webhook_secret": "${StripeWebhookSecret}",
+          "price_id_pro": "${StripePriceIdPro}",
+          "price_id_enterprise": "${StripePriceIdEnterprise}"
+        }
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-stripe-secret
+
+Outputs:
+  StripeSecretArn:
+    Description: ARN of the Secrets Manager secret for Stripe
+    Value: !Ref StripeSecret
+    Export:
+      Name: !Sub '${AWS::StackName}-StripeSecretArn'
+
+  StripeSecretName:
+    Description: Name of the Secrets Manager secret
+    Value: !Sub '${ProjectName}-${Environment}-stripe'
+    Export:
+      Name: !Sub '${AWS::StackName}-StripeSecretName'

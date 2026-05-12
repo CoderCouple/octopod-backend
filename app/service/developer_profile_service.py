@@ -7,8 +7,10 @@ from app.api.v1.request.developer_profile_request import (
     UpdateDeveloperProfileRequest,
 )
 from app.api.v1.response.developer_profile_response import DeveloperProfileResponse
+from app.common.billing.plan_enforcement import PlanEnforcer
 from app.common.exceptions import DuplicateEntityError, EntityNotFoundError
 from app.db.repository.developer_profile_repository import DeveloperProfileRepository
+from app.db.repository.organization_repository import OrganizationRepository
 from app.model.developer_profile_model import DeveloperProfile
 
 
@@ -16,6 +18,8 @@ class DeveloperProfileService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repo = DeveloperProfileRepository(db)
+        self.org_repo = OrganizationRepository(db)
+        self.enforcer = PlanEnforcer(db)
 
     async def _check_duplicates(
         self, data: CreateDeveloperProfileRequest | UpdateDeveloperProfileRequest,
@@ -37,8 +41,14 @@ class DeveloperProfileService:
                 )
 
     async def create_profile(
-        self, data: CreateDeveloperProfileRequest, actor_id: str | None = None
+        self, data: CreateDeveloperProfileRequest, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> DeveloperProfileResponse:
+        if org_id and project_id:
+            org = await self.org_repo.get_by_id(org_id)
+            plan = org.plan if org else "free"
+            await self.enforcer.check_developer_profiles(plan, project_id)
+
         await self._check_duplicates(data)
 
         profile = DeveloperProfile(

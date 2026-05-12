@@ -15,6 +15,7 @@ from app.db.base import Base  # noqa: E402
 from app.model.aggregated_individual_profile_model import (
     AggregatedIndividualProfile,  # noqa: E402, F401
 )
+from app.model.billing_event_model import BillingEvent  # noqa: E402, F401
 from app.model.campaign_recipient_model import CampaignRecipient  # noqa: E402, F401
 from app.model.campaign_step_model import CampaignStep  # noqa: E402, F401
 from app.model.cohesive_individual_profile_model import (
@@ -28,8 +29,13 @@ from app.model.email_template_model import EmailTemplate  # noqa: E402, F401
 from app.model.email_unsubscribe_model import EmailUnsubscribe  # noqa: E402, F401
 from app.model.mailbox_model import Mailbox  # noqa: E402, F401
 from app.model.merge_audit_log_model import MergeAuditLog  # noqa: E402, F401
+from app.model.org_membership_model import OrgMembership  # noqa: E402, F401
+from app.model.organization_model import Organization  # noqa: E402, F401
 from app.model.profile_ranking_model import ProfileRanking  # noqa: E402, F401
+from app.model.project_model import Project  # noqa: E402, F401
 from app.model.social_profile_model import SocialProfile  # noqa: E402, F401
+from app.model.subscription_model import Subscription  # noqa: E402, F401
+from app.model.user_model import User  # noqa: E402, F401
 from app.settings import settings  # noqa: E402
 
 # this is the Alembic Config object

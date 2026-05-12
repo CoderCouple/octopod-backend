@@ -17,10 +17,12 @@ def get_async_engine():
         An ``AsyncEngine`` instance (cached; only one is created per
         process).
     """
+    connect_args = {"ssl": "require"} if settings.db_ssl_require else {}
     return create_async_engine(
         settings.async_database_url,
         echo=settings.debug,
         future=True,
+        connect_args=connect_args,
     )
 
 

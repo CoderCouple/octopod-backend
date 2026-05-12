@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "octopodai"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "StripeSecretKey",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  },
+  {
+    "ParameterKey": "StripeWebhookSecret",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  },
+  {
+    "ParameterKey": "StripePriceIdPro",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  },
+  {
+    "ParameterKey": "StripePriceIdEnterprise",
+    "ParameterValue": "REPLACE_AT_DEPLOY_TIME"
+  }
+]

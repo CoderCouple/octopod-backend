@@ -47,6 +47,23 @@ class MailboxRepository:
         )
         return list(result.scalars().all()), total
 
+    async def list_by_project(
+        self, project_id: str, offset: int = 0, limit: int = 20
+    ) -> tuple[list[Mailbox], int]:
+        base = select(Mailbox).where(
+            Mailbox.project_id == project_id,
+            Mailbox.is_deleted == False,  # noqa: E712
+        )
+        count_result = await self.db.execute(
+            select(func.count()).select_from(base.subquery())
+        )
+        total = count_result.scalar() or 0
+
+        result = await self.db.execute(
+            base.order_by(Mailbox.created_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
     async def create(self, mailbox: Mailbox) -> Mailbox:
         self.db.add(mailbox)
         await self.db.flush()

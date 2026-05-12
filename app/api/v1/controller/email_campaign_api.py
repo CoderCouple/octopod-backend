@@ -23,7 +23,7 @@ from app.api.v1.response.email_campaign_response import (
     EmailCampaignResponse,
     EmailMessageResponse,
 )
-from app.common.auth.auth import get_actor_id_required
+from app.common.auth.auth import UserContext, get_user_context
 from app.common.pagination import PaginatedResponse
 from app.db.session import get_db
 from app.service.campaign_service import CampaignService
@@ -42,12 +42,13 @@ def get_campaign_service(db: AsyncSession = Depends(get_db)) -> CampaignService:
 )
 async def create_campaign(
     body: CreateCampaignRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Create a new email campaign."""
-    owner_id = actor_id
-    result = await service.create_campaign(body, owner_id, actor_id)
+    result = await service.create_campaign(
+        body, ctx.actor_id, ctx.user_id, project_id=ctx.project_id, org_id=ctx.organization_id
+    )
     return success_response(result, "Campaign created", 201)
 
 
@@ -58,12 +59,13 @@ async def create_campaign(
 async def list_campaigns(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
-    """List campaigns for the current user."""
-    owner_id = actor_id
-    campaigns, total = await service.list_campaigns(owner_id, offset, limit)
+    """List campaigns in the current project."""
+    campaigns, total = await service.list_campaigns(
+        ctx.actor_id, offset, limit, project_id=ctx.project_id
+    )
     page = PaginatedResponse(items=campaigns, total=total, offset=offset, limit=limit)
     return success_response(page, "Campaigns fetched")
 
@@ -74,7 +76,7 @@ async def list_campaigns(
 )
 async def get_campaign(
     campaign_id: str,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Retrieve a single campaign."""
@@ -89,22 +91,22 @@ async def get_campaign(
 async def update_campaign(
     campaign_id: str,
     body: UpdateCampaignRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Update a campaign."""
-    result = await service.update_campaign(campaign_id, body, actor_id)
+    result = await service.update_campaign(campaign_id, body, ctx.user_id)
     return success_response(result, "Campaign updated")
 
 
 @router.delete("/email-campaign/{campaign_id}", response_model=BaseResponse)
 async def delete_campaign(
     campaign_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Soft-delete a campaign."""
-    await service.delete_campaign(campaign_id, actor_id)
+    await service.delete_campaign(campaign_id, ctx.user_id)
     return success_response(None, "Campaign deleted")
 
 
@@ -116,11 +118,11 @@ async def delete_campaign(
 )
 async def start_campaign(
     campaign_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Start a draft campaign."""
-    result = await service.start_campaign(campaign_id, actor_id)
+    result = await service.start_campaign(campaign_id, ctx.user_id)
     return success_response(result, "Campaign started")
 
 
@@ -130,11 +132,11 @@ async def start_campaign(
 )
 async def pause_campaign(
     campaign_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Pause an active campaign."""
-    result = await service.pause_campaign(campaign_id, actor_id)
+    result = await service.pause_campaign(campaign_id, ctx.user_id)
     return success_response(result, "Campaign paused")
 
 
@@ -144,11 +146,11 @@ async def pause_campaign(
 )
 async def resume_campaign(
     campaign_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Resume a paused campaign."""
-    result = await service.resume_campaign(campaign_id, actor_id)
+    result = await service.resume_campaign(campaign_id, ctx.user_id)
     return success_response(result, "Campaign resumed")
 
 
@@ -158,11 +160,11 @@ async def resume_campaign(
 )
 async def cancel_campaign(
     campaign_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Cancel a campaign permanently."""
-    result = await service.cancel_campaign(campaign_id, actor_id)
+    result = await service.cancel_campaign(campaign_id, ctx.user_id)
     return success_response(result, "Campaign cancelled")
 
 
@@ -176,11 +178,11 @@ async def cancel_campaign(
 async def add_step(
     campaign_id: str,
     body: CreateStepRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Add a step to a campaign sequence."""
-    result = await service.add_step(campaign_id, body, actor_id)
+    result = await service.add_step(campaign_id, body, ctx.user_id)
     return success_response(result, "Step added", 201)
 
 
@@ -190,7 +192,7 @@ async def add_step(
 )
 async def list_steps(
     campaign_id: str,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List all steps in a campaign."""
@@ -205,22 +207,22 @@ async def list_steps(
 async def update_step(
     step_id: str,
     body: UpdateStepRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Update a campaign step."""
-    result = await service.update_step(step_id, body, actor_id)
+    result = await service.update_step(step_id, body, ctx.user_id)
     return success_response(result, "Step updated")
 
 
 @router.delete("/email-campaign/steps/{step_id}", response_model=BaseResponse)
 async def delete_step(
     step_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Delete a campaign step."""
-    await service.delete_step(step_id, actor_id)
+    await service.delete_step(step_id, ctx.user_id)
     return success_response(None, "Step deleted")
 
 
@@ -234,11 +236,11 @@ async def delete_step(
 async def add_recipient(
     campaign_id: str,
     body: AddRecipientRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Add a recipient to a campaign."""
-    result = await service.add_recipient(campaign_id, body, actor_id)
+    result = await service.add_recipient(campaign_id, body, ctx.user_id)
     return success_response(result, "Recipient added", 201)
 
 
@@ -250,7 +252,7 @@ async def list_recipients(
     campaign_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List recipients in a campaign."""
@@ -264,11 +266,11 @@ async def list_recipients(
 )
 async def remove_recipient(
     recipient_id: str,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Remove a recipient from a campaign."""
-    await service.remove_recipient(recipient_id, actor_id)
+    await service.remove_recipient(recipient_id, ctx.user_id)
     return success_response(None, "Recipient removed")
 
 
@@ -279,7 +281,7 @@ async def remove_recipient(
 async def add_recipients_from_search(
     campaign_id: str,
     body: AddRecipientsFromSearchRequest,
-    actor_id: str = Depends(get_actor_id_required),
+    ctx: UserContext = Depends(get_user_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Add recipients from developer profile IDs with auto-enrichment."""
@@ -317,8 +319,8 @@ async def add_recipients_from_search(
             email=enrichment.email,
             email_source=enrichment.source,
             status=RecipientStatus.ACTIVE.value,
-            created_by=actor_id,
-            updated_by=actor_id,
+            created_by=ctx.user_id,
+            updated_by=ctx.user_id,
         )
         recipient = await recipient_repo.create(recipient)
         await campaign_repo.increment_stat(campaign_id, "total_recipients")
@@ -335,7 +337,7 @@ async def add_recipients_from_search(
 )
 async def get_campaign_analytics(
     campaign_id: str,
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """Get campaign-level analytics."""
@@ -351,7 +353,7 @@ async def list_campaign_messages(
     campaign_id: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
-    _actor_id: str = Depends(get_actor_id_required),
+    _ctx: UserContext = Depends(get_user_context),
     service: CampaignService = Depends(get_campaign_service),
 ):
     """List all messages for a campaign."""

@@ -15,6 +15,7 @@ class EmailCampaign(Base):
 
     id = Column(String(), primary_key=True, default=generate_prefixed_uuid, nullable=False)
     owner_id = Column(String(), nullable=False, index=True)
+    project_id = Column(String(), nullable=True, index=True)
     mailbox_id = Column(String(), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text(), nullable=True)

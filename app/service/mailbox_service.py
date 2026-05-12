@@ -18,9 +18,11 @@ from app.api.v1.request.mailbox_request import (
     UpdateMailboxRequest,
 )
 from app.api.v1.response.mailbox_response import MailboxResponse
+from app.common.billing.plan_enforcement import PlanEnforcer
 from app.common.enum.email import MailboxProvider, MailboxStatus
 from app.common.exceptions import DuplicateEntityError, EntityNotFoundError
 from app.db.repository.mailbox_repository import MailboxRepository
+from app.db.repository.organization_repository import OrganizationRepository
 from app.model.mailbox_model import Mailbox
 from app.settings import settings
 
@@ -33,11 +35,21 @@ class MailboxService:
     def __init__(self, db: AsyncSession):
         self.db = db
         self.repo = MailboxRepository(db)
+        self.org_repo = OrganizationRepository(db)
+        self.enforcer = PlanEnforcer(db)
+
+    async def _check_mailbox_limit(self, org_id: str | None, project_id: str | None) -> None:
+        if org_id and project_id:
+            org = await self.org_repo.get_by_id(org_id)
+            plan = org.plan if org else "free"
+            await self.enforcer.check_mailboxes(plan, project_id)
 
     async def connect_gmail(
-        self, data: ConnectGmailRequest, owner_id: str, actor_id: str | None = None
+        self, data: ConnectGmailRequest, owner_id: str, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> MailboxResponse:
         """Exchange a Gmail OAuth authorization code for tokens and create a mailbox."""
+        await self._check_mailbox_limit(org_id, project_id)
         async with httpx.AsyncClient() as client:
             resp = await client.post(
                 "https://oauth2.googleapis.com/token",
@@ -71,6 +83,7 @@ class MailboxService:
 
         mailbox = Mailbox(
             owner_id=owner_id,
+            project_id=project_id,
             provider=MailboxProvider.GMAIL.value,
             email_address=email_address,
             display_name=data.display_name or profile.get("name", ""),
@@ -85,9 +98,11 @@ class MailboxService:
         return MailboxResponse.model_validate(mailbox)
 
     async def connect_outlook(
-        self, data: ConnectOutlookRequest, owner_id: str, actor_id: str | None = None
+        self, data: ConnectOutlookRequest, owner_id: str, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> MailboxResponse:
         """Exchange an Outlook OAuth authorization code for tokens and create a mailbox."""
+        await self._check_mailbox_limit(org_id, project_id)
         tenant = settings.ms_tenant_id or "common"
         async with httpx.AsyncClient() as client:
             resp = await client.post(
@@ -118,6 +133,7 @@ class MailboxService:
 
         mailbox = Mailbox(
             owner_id=owner_id,
+            project_id=project_id,
             provider=MailboxProvider.OUTLOOK.value,
             email_address=email_address,
             display_name=data.display_name or profile.get("displayName", ""),
@@ -131,15 +147,18 @@ class MailboxService:
         return MailboxResponse.model_validate(mailbox)
 
     async def connect_smtp(
-        self, data: ConnectSmtpRequest, owner_id: str, actor_id: str | None = None
+        self, data: ConnectSmtpRequest, owner_id: str, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> MailboxResponse:
         """Create a mailbox with SMTP credentials."""
+        await self._check_mailbox_limit(org_id, project_id)
         existing = await self.repo.get_by_email(data.email_address)
         if existing:
             raise DuplicateEntityError("Mailbox", "email_address", data.email_address)
 
         mailbox = Mailbox(
             owner_id=owner_id,
+            project_id=project_id,
             provider=MailboxProvider.SMTP.value,
             email_address=data.email_address,
             display_name=data.display_name,
@@ -156,15 +175,18 @@ class MailboxService:
         return MailboxResponse.model_validate(mailbox)
 
     async def connect_ses(
-        self, data: ConnectSesRequest, owner_id: str, actor_id: str | None = None
+        self, data: ConnectSesRequest, owner_id: str, actor_id: str | None = None,
+        project_id: str | None = None, org_id: str | None = None,
     ) -> MailboxResponse:
         """Create a mailbox backed by AWS SES."""
+        await self._check_mailbox_limit(org_id, project_id)
         existing = await self.repo.get_by_email(data.email_address)
         if existing:
             raise DuplicateEntityError("Mailbox", "email_address", data.email_address)
 
         mailbox = Mailbox(
             owner_id=owner_id,
+            project_id=project_id,
             provider=MailboxProvider.SES.value,
             email_address=data.email_address,
             display_name=data.display_name,
@@ -182,9 +204,13 @@ class MailboxService:
         return MailboxResponse.model_validate(mailbox)
 
     async def list_mailboxes(
-        self, owner_id: str, offset: int = 0, limit: int = 20
+        self, owner_id: str, offset: int = 0, limit: int = 20,
+        project_id: str | None = None,
     ) -> tuple[list[MailboxResponse], int]:
-        mailboxes, total = await self.repo.list_by_owner(owner_id, offset, limit)
+        if project_id:
+            mailboxes, total = await self.repo.list_by_project(project_id, offset, limit)
+        else:
+            mailboxes, total = await self.repo.list_by_owner(owner_id, offset, limit)
         return [MailboxResponse.model_validate(m) for m in mailboxes], total
 
     async def update_mailbox(

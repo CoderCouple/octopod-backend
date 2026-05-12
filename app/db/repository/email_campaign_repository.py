@@ -38,6 +38,23 @@ class EmailCampaignRepository:
         )
         return list(result.scalars().all()), total
 
+    async def list_by_project(
+        self, project_id: str, offset: int = 0, limit: int = 20
+    ) -> tuple[list[EmailCampaign], int]:
+        base = select(EmailCampaign).where(
+            EmailCampaign.project_id == project_id,
+            EmailCampaign.is_deleted == False,  # noqa: E712
+        )
+        count_result = await self.db.execute(
+            select(func.count()).select_from(base.subquery())
+        )
+        total = count_result.scalar() or 0
+
+        result = await self.db.execute(
+            base.order_by(EmailCampaign.created_at.desc()).offset(offset).limit(limit)
+        )
+        return list(result.scalars().all()), total
+
     async def get_by_status(
         self, status: str, offset: int = 0, limit: int = 20
     ) -> tuple[list[EmailCampaign], int]:
