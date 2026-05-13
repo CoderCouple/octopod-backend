@@ -202,7 +202,7 @@ class Settings(BaseSettings):
             )
         if self.db_ssl_require:
             sep = "&" if "?" in url else "?"
-            url = f"{url}{sep}ssl=require"
+            url = f"{url}{sep}sslmode=require"
         return url
 
     @property
