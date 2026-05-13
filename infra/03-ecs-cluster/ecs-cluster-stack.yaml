@@ -163,7 +163,7 @@ Resources:
         BlockDeviceMappings:
           - DeviceName: /dev/xvda
             Ebs:
-              VolumeSize: 30
+              VolumeSize: 60
               VolumeType: gp3
               DeleteOnTermination: true
         UserData:
@@ -172,6 +172,11 @@ Resources:
             echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
             echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
             echo ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true >> /etc/ecs/ecs.config
+            # Aggressive image cleanup — auto-prune stale Docker images
+            echo ECS_IMAGE_CLEANUP_INTERVAL=10m >> /etc/ecs/ecs.config
+            echo ECS_IMAGE_MINIMUM_CLEANUP_AGE=30m >> /etc/ecs/ecs.config
+            echo ECS_NUM_IMAGES_DELETE_PER_CYCLE=10 >> /etc/ecs/ecs.config
+            echo ECS_DISABLE_IMAGE_CLEANUP=false >> /etc/ecs/ecs.config
             yum update -y
             yum install -y ecs-init
             service docker start

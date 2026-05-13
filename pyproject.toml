@@ -20,6 +20,10 @@ psycopg = {version = "^3.2.0", extras = ["binary"]}
 aiohttp = "^3.12.0"
 jinja2 = "^3.1.4"
 qdrant-client = "^1.11.0"
+# CPU-only torch — saves ~1.5 GB vs the default CUDA wheel.
+# Pinned explicitly so sentence-transformers picks up this resolved version
+# instead of pulling the default GPU build.
+torch = { version = "^2.0", source = "pytorch-cpu" }
 sentence-transformers = "^3.0.0"
 aiosmtplib = "^3.0.0"
 opensearch-py = "^2.7.0"
@@ -40,6 +44,11 @@ ruff = "^0.8.0"
 debugpy = "^1.8.0"
 aiosqlite = "^0.22.1"
 greenlet = "^3.4.0"
+
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
