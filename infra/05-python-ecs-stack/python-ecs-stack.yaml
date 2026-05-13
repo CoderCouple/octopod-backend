@@ -192,8 +192,8 @@ Resources:
       Family: !Sub ${ProjectName}-${Environment}-python
       NetworkMode: awsvpc
       RequiresCompatibilities: [EC2]
-      Memory: 768   # fits t3a.micro (1 GB) with headroom for ECS agent
-      Cpu: 384
+      Memory: 3072   # fits t3.medium (4 GB) with headroom for the cross-encoder reranker
+      Cpu: 1024
       TaskRoleArn: !GetAtt ECSTaskRole.Arn
       ExecutionRoleArn: !GetAtt PythonECSExecutionRole.Arn
       ContainerDefinitions:
