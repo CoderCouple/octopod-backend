@@ -48,8 +48,10 @@ if config.config_file_name is not None:
 # Add your model's MetaData object here for 'autogenerate' support
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url with value from settings
-config.set_main_option("sqlalchemy.url", settings.sync_database_url)
+# Override sqlalchemy.url with value from settings.
+# Escape `%` to `%%` because alembic uses ConfigParser interpolation, and our
+# URL-encoded DB password may contain `%`-sequences (e.g. `%5D` for `]`).
+config.set_main_option("sqlalchemy.url", settings.sync_database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:
