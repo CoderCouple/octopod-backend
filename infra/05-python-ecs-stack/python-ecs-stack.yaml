@@ -408,6 +408,10 @@ Resources:
           'Fn::Sub': '${NetworkStackName}-PublicSubnetB'
         - !ImportValue
           'Fn::Sub': '${NetworkStackName}-PublicSubnetC'
+      LoadBalancerAttributes:
+        # ML reranker model load can take ~90s on cold start; give it headroom
+        - Key: idle_timeout.timeout_seconds
+          Value: '180'
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-${Environment}-alb

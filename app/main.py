@@ -89,6 +89,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception:
         logger.warning("Pipeline scheduler startup skipped")
 
+    # Pre-warm ML models so the first search request doesn't pay the load cost
+    # (reranker is ~2.3 GB and takes 60-90s to download + load on cold start).
+    # Runs as a background task so it doesn't block startup health checks.
+    if settings.reranker_enabled:
+        try:
+            import asyncio
+
+            from app.service.reranking.cross_encoder_reranker import _get_model
+
+            async def _warm_reranker() -> None:
+                try:
+                    await asyncio.to_thread(_get_model)
+                    logger.info("Reranker model pre-warmed: %s", settings.reranker_model)
+                except Exception:
+                    logger.exception("Reranker pre-warm failed (will load on first request)")
+
+            asyncio.create_task(_warm_reranker())
+        except Exception:
+            logger.warning("Reranker pre-warm scheduling skipped")
+
     yield
 
     # Stop pipeline scheduler
