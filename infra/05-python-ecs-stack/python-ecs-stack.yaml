@@ -203,9 +203,9 @@ Resources:
             - ECRUri: !ImportValue
                 'Fn::Sub': '${CodeBuildStackName}-ECRRepositoryUri'
           Essential: true
-          Memory: 700
-          MemoryReservation: 512
-          Cpu: 384
+          Memory: 3000
+          MemoryReservation: 2000
+          Cpu: 1024
           PortMappings:
             - ContainerPort: 8000
               HostPort: 8000
