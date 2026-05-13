@@ -1,5 +1,6 @@
 
 import platform
+from urllib.parse import quote
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -176,10 +177,18 @@ class Settings(BaseSettings):
     )
 
     @property
+    def _quoted_password(self) -> str:
+        """URL-encode the password so special chars (`:`, `$`, `@`, etc.) don't break URL parsing."""
+        return quote(self.postgres_password, safe="")
+
+    @property
     def async_database_url(self) -> str:
         if self.database_url:
             return self.database_url.replace("postgresql://", "postgresql+asyncpg://")
-        return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self._quoted_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
     @property
     def asyncpg_dsn(self) -> str:
@@ -188,7 +197,7 @@ class Settings(BaseSettings):
             url = self.database_url.replace("postgresql+asyncpg://", "postgresql://")
         else:
             url = (
-                f"postgresql://{self.postgres_user}:{self.postgres_password}"
+                f"postgresql://{self.postgres_user}:{self._quoted_password}"
                 f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
             )
         if self.db_ssl_require:
@@ -201,7 +210,10 @@ class Settings(BaseSettings):
         if self.database_url:
             url = self.database_url.replace("postgresql://", "postgresql+psycopg://")
         else:
-            url = f"postgresql+psycopg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            url = (
+                f"postgresql+psycopg://{self.postgres_user}:{self._quoted_password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            )
         if self.db_ssl_require:
             sep = "&" if "?" in url else "?"
             url = f"{url}{sep}sslmode=require"
