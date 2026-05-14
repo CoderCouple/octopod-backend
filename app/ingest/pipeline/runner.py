@@ -466,12 +466,10 @@ class PipelineRunner:
         try:
             from app.db.qdrant_client import get_qdrant_client
             from app.ingest.bridge.indexer import DualIndexer
-            from app.service.embedding.sentence_transformer_provider import (
-                SentenceTransformerProvider,
-            )
+            from app.service.embedding import get_embedding_provider
 
             qdrant_client = get_qdrant_client()
-            embedding_provider = SentenceTransformerProvider()
+            embedding_provider = get_embedding_provider()
             indexer = DualIndexer(
                 qdrant_client=qdrant_client,
                 embedding_provider=embedding_provider,
@@ -500,10 +498,10 @@ class PipelineRunner:
         from app.db.qdrant_client import get_qdrant_client
         from app.ingest.bridge.indexer import DualIndexer
         from app.ingest.pipeline.embed import batch_embed_from_db
-        from app.service.embedding.sentence_transformer_provider import SentenceTransformerProvider
+        from app.service.embedding import get_embedding_provider
 
         qdrant_client = get_qdrant_client()
-        embedding_provider = SentenceTransformerProvider()
+        embedding_provider = get_embedding_provider()
         indexer = DualIndexer(
             qdrant_client=qdrant_client,
             embedding_provider=embedding_provider,

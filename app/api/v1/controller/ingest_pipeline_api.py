@@ -137,12 +137,10 @@ async def _run_embed(job_id: str, req: EmbedRequest) -> None:
 
             from app.db.qdrant_client import get_qdrant_client
             from app.ingest.bridge.indexer import DualIndexer
-            from app.service.embedding.sentence_transformer_provider import (
-                SentenceTransformerProvider,
-            )
+            from app.service.embedding import get_embedding_provider
 
             qdrant_client = get_qdrant_client()
-            embedding_provider = SentenceTransformerProvider()
+            embedding_provider = get_embedding_provider()
             opensearch_client = None
             if req.include_opensearch:
                 try:

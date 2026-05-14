@@ -48,12 +48,19 @@ class Settings(BaseSettings):
 
     # Embedding
     embedding_model: str = "all-MiniLM-L6-v2"
-    embedding_provider: str = "sentence_transformer"
+    embedding_provider: str = "sentence_transformer"  # sentence_transformer | bedrock_cohere | bedrock_titan
     embedding_dimension: int = 384
 
     # Reranker
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
     reranker_enabled: bool = True
+    reranker_provider: str = "local"  # local | bedrock_cohere
+
+    # AWS Bedrock (for managed embeddings + rerank)
+    bedrock_region: str = "us-west-2"
+    bedrock_embedding_model: str = "cohere.embed-english-v3"  # 1024-dim
+    bedrock_rerank_model: str = "cohere.rerank-v3-5:0"
+    qdrant_collection: str = "developer_profiles"  # bumps to _v2 when switching to bedrock_cohere
 
     # GitHub Ingestion
     github_tokens: str = ""  # Comma-separated PATs for token rotation

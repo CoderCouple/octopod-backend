@@ -5,7 +5,7 @@ from app.settings import settings
 
 logger = logging.getLogger(__name__)
 
-COLLECTION_NAME = "developer_profiles"
+COLLECTION_NAME = settings.qdrant_collection
 VECTOR_SIZE = settings.embedding_dimension
 
 

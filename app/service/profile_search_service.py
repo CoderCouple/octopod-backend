@@ -43,11 +43,9 @@ class ProfileSearchService:
     def _get_embedding_provider(self) -> EmbeddingProvider:
         if self._embedding_provider:
             return self._embedding_provider
-        from app.service.embedding.sentence_transformer_provider import (
-            SentenceTransformerProvider,
-        )
+        from app.service.embedding import get_embedding_provider
 
-        self._embedding_provider = SentenceTransformerProvider()
+        self._embedding_provider = get_embedding_provider()
         return self._embedding_provider
 
     def _get_qdrant_client(self) -> Any:
@@ -63,9 +61,9 @@ class ProfileSearchService:
             return self._reranker
         if not settings.reranker_enabled:
             return None
-        from app.service.reranking.cross_encoder_reranker import CrossEncoderReranker
+        from app.service.reranking import get_reranker
 
-        self._reranker = CrossEncoderReranker()
+        self._reranker = get_reranker()
         return self._reranker
 
     @staticmethod

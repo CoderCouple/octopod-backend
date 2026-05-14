@@ -531,10 +531,10 @@ async def _sync(platform: str, since_hours: int) -> int:
 
         # Set up search indexer
         from app.db.qdrant_client import get_qdrant_client
-        from app.service.embedding.sentence_transformer_provider import SentenceTransformerProvider
+        from app.service.embedding import get_embedding_provider
 
         qdrant_client = get_qdrant_client()
-        embedding_provider = SentenceTransformerProvider()
+        embedding_provider = get_embedding_provider()
         indexer = DualIndexer(
             qdrant_client=qdrant_client,
             embedding_provider=embedding_provider,
@@ -582,10 +582,10 @@ async def _embed(batch_size: int, include_opensearch: bool) -> int:
 
         from app.db.qdrant_client import get_qdrant_client
         from app.ingest.bridge.indexer import DualIndexer
-        from app.service.embedding.sentence_transformer_provider import SentenceTransformerProvider
+        from app.service.embedding import get_embedding_provider
 
         qdrant_client = get_qdrant_client()
-        embedding_provider = SentenceTransformerProvider()
+        embedding_provider = get_embedding_provider()
         opensearch_client = None
         if include_opensearch:
             try:

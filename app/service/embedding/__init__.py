@@ -9,3 +9,23 @@ class EmbeddingProvider(ABC):
     @abstractmethod
     def dimension(self) -> int:
         ...
+
+
+def get_embedding_provider() -> EmbeddingProvider:
+    """Factory: dispatch to the configured embedding backend.
+
+    Driven by ``settings.embedding_provider``:
+      * ``sentence_transformer`` -> local SentenceTransformer (default)
+      * ``bedrock_cohere`` -> Cohere Embed v3 via AWS Bedrock (1024 dim)
+    """
+    from app.settings import settings
+
+    if settings.embedding_provider == "bedrock_cohere":
+        from app.service.embedding.bedrock_provider import BedrockCohereEmbeddingProvider
+
+        return BedrockCohereEmbeddingProvider()
+    from app.service.embedding.sentence_transformer_provider import (
+        SentenceTransformerProvider,
+    )
+
+    return SentenceTransformerProvider()

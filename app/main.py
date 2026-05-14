@@ -92,7 +92,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Pre-warm ML models so the first search request doesn't pay the load cost
     # (reranker is ~2.3 GB and takes 60-90s to download + load on cold start).
     # Runs as a background task so it doesn't block startup health checks.
-    if settings.reranker_enabled:
+    # Skip for managed providers (Bedrock) where there's no in-process model.
+    if settings.reranker_enabled and settings.reranker_provider == "local":
         try:
             import asyncio
 
