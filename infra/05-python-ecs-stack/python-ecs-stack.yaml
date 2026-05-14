@@ -257,7 +257,7 @@ Resources:
             - Name: EMBEDDING_MODEL
               Value: all-MiniLM-L6-v2
             - Name: EMBEDDING_PROVIDER
-              Value: bedrock_cohere
+              Value: bedrock_titan
             - Name: EMBEDDING_DIMENSION
               Value: '1024'
             - Name: RERANKER_PROVIDER
@@ -265,7 +265,7 @@ Resources:
             - Name: BEDROCK_REGION
               Value: us-west-2
             - Name: BEDROCK_EMBEDDING_MODEL
-              Value: cohere.embed-english-v3
+              Value: amazon.titan-embed-text-v2:0
             - Name: BEDROCK_RERANK_MODEL
               Value: cohere.rerank-v3-5:0
             - Name: QDRANT_COLLECTION
