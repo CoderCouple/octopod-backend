@@ -4,12 +4,33 @@ Replaces the previous stub with a real implementation.
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
 import asyncpg
 
 log = logging.getLogger(__name__)
+
+
+async def _register_jsonb_codec(conn: asyncpg.Connection) -> None:
+    """Make asyncpg return JSONB columns as Python objects, not raw JSON strings.
+
+    Without this, indexer sees ``"[]"`` (string) instead of ``[]`` (list) for
+    columns like ``job_history`` — and OpenSearch rejects with mapper_parsing_exception.
+    """
+    await conn.set_type_codec(
+        "jsonb",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
+    await conn.set_type_codec(
+        "json",
+        encoder=json.dumps,
+        decoder=json.loads,
+        schema="pg_catalog",
+    )
 
 # Explicit columns for cohesive_individual_profile (no SELECT *)
 _CIP_COLUMNS = (
@@ -45,6 +66,7 @@ async def batch_embed_from_db(
     """
     # Count total eligible profiles
     async with pool.acquire() as conn:
+        await _register_jsonb_codec(conn)
         if force:
             total = await conn.fetchval(
                 "SELECT COUNT(*) FROM cohesive_individual_profile "
@@ -69,6 +91,7 @@ async def batch_embed_from_db(
 
     while offset < total:
         async with pool.acquire() as conn:
+            await _register_jsonb_codec(conn)
             if force:
                 rows = await conn.fetch(
                     f"SELECT {_CIP_COLUMNS} FROM cohesive_individual_profile "
@@ -101,6 +124,7 @@ async def batch_embed_from_db(
         # Update embedding_vector_id for successfully indexed profiles
         if batch_embedded > 0:
             async with pool.acquire() as conn:
+                await _register_jsonb_codec(conn)
                 for p in profiles:
                     if p.get("embedding_vector_id"):
                         continue
