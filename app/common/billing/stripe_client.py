@@ -75,3 +75,27 @@ def construct_webhook_event(payload: bytes, sig_header: str) -> stripe.Event:
     return stripe.Webhook.construct_event(
         payload, sig_header, settings.stripe_webhook_secret
     )
+
+
+def list_invoices(customer_id: str, limit: int = 20) -> list[dict]:
+    """List recent invoices for a customer. Returns simplified dicts."""
+    _configure()
+    resp = stripe.Invoice.list(customer=customer_id, limit=limit)
+    out = []
+    for inv in resp.data:
+        out.append(
+            {
+                "id": inv["id"],
+                "number": inv.get("number"),
+                "status": inv["status"],
+                "amount_paid": inv["amount_paid"],
+                "amount_due": inv["amount_due"],
+                "currency": inv["currency"],
+                "created": inv["created"],
+                "period_start": inv.get("period_start"),
+                "period_end": inv.get("period_end"),
+                "hosted_invoice_url": inv.get("hosted_invoice_url"),
+                "invoice_pdf": inv.get("invoice_pdf"),
+            }
+        )
+    return out

@@ -114,6 +114,74 @@ class BillingService:
             return_url=return_url,
         )
 
+    # ── Invoices ──────────────────────────────────────────────────
+
+    async def get_invoices(self, org_id: str, limit: int = 20) -> list[dict]:
+        """Return recent Stripe invoices for an org. Empty list if no customer yet."""
+        sub = await self.sub_repo.get_by_org_id(org_id)
+        if not sub or not sub.stripe_customer_id:
+            return []
+        try:
+            return stripe_client.list_invoices(sub.stripe_customer_id, limit=limit)
+        except Exception:
+            logger.exception("Failed to list invoices for org=%s", org_id)
+            return []
+
+    # ── Usage vs Plan Limits ──────────────────────────────────────
+
+    async def get_usage(self, org_id: str, project_id: str | None = None) -> dict:
+        """Return current resource counts vs plan limits for the org's plan."""
+        from sqlalchemy import func, select
+
+        from app.common.billing.plan_limits import get_plan_limits
+        from app.model.developer_profile_model import DeveloperProfile
+        from app.model.email_campaign_model import EmailCampaign
+        from app.model.mailbox_model import Mailbox
+        from app.model.org_membership_model import OrgMembership
+        from app.model.project_model import Project
+
+        # Determine plan from subscription (fallback to free)
+        sub = await self.sub_repo.get_by_org_id(org_id)
+        plan = sub.plan if sub else OrgPlan.FREE.value
+        limits = get_plan_limits(plan)
+
+        async def count(model, *conds) -> int:
+            q = select(func.count(model.id)).where(*conds)
+            if hasattr(model, "is_deleted"):
+                q = q.where(model.is_deleted == False)  # noqa: E712
+            r = await self.db.execute(q)
+            return r.scalar() or 0
+
+        # Project-scoped counts
+        mailboxes = 0
+        campaigns = 0
+        profiles = 0
+        if project_id:
+            mailboxes = await count(Mailbox, Mailbox.project_id == project_id)
+            campaigns = await count(EmailCampaign, EmailCampaign.project_id == project_id)
+            profiles = await count(DeveloperProfile, DeveloperProfile.project_id == project_id)
+
+        # Org-scoped counts
+        projects = await count(Project, Project.org_id == org_id)
+        members_q = await self.db.execute(
+            select(func.count(OrgMembership.id)).where(
+                OrgMembership.org_id == org_id,
+                OrgMembership.status.in_(["active", "invited"]),
+            )
+        )
+        members = members_q.scalar() or 0
+
+        return {
+            "plan": plan,
+            "items": [
+                {"key": "mailboxes", "label": "Mailboxes", "used": mailboxes, "limit": limits.mailboxes},
+                {"key": "campaigns", "label": "Campaigns", "used": campaigns, "limit": limits.campaigns},
+                {"key": "developer_profiles", "label": "Developer profiles", "used": profiles, "limit": limits.developer_profiles},
+                {"key": "projects", "label": "Projects", "used": projects, "limit": limits.projects},
+                {"key": "org_members", "label": "Team members", "used": members, "limit": limits.org_members},
+            ],
+        }
+
     # ── Billing Info ──────────────────────────────────────────────
 
     async def get_billing_info(self, org_id: str) -> dict:

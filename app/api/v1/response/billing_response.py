@@ -20,3 +20,29 @@ class CheckoutResponse(BaseModel):
 
 class PortalResponse(BaseModel):
     portal_url: str
+
+
+class InvoiceResponse(BaseModel):
+    id: str
+    number: str | None = None
+    status: str
+    amount_paid: int
+    amount_due: int
+    currency: str
+    created: int
+    period_start: int | None = None
+    period_end: int | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+
+
+class UsageItemResponse(BaseModel):
+    key: str
+    label: str
+    used: int
+    limit: int
+
+
+class UsageResponse(BaseModel):
+    plan: str
+    items: list[UsageItemResponse]
