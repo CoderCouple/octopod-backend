@@ -44,6 +44,14 @@
     "ParameterValue": "octopodai-dev-stripe-stack"
   },
   {
+    "ParameterKey": "EmailServiceStackName",
+    "ParameterValue": "octopodai-dev-email-service-stack"
+  },
+  {
+    "ParameterKey": "SesFromEmail",
+    "ParameterValue": "outreach@octopodai.app"
+  },
+  {
     "ParameterKey": "DomainName",
     "ParameterValue": "octopodai.app"
   },

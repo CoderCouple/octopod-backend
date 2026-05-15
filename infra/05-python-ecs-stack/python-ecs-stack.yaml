@@ -47,6 +47,14 @@ Parameters:
     Type: String
     Default: octopodai-dev-stripe-stack
     AllowedPattern: \S+
+  EmailServiceStackName:
+    Type: String
+    Default: octopodai-dev-email-service-stack
+    AllowedPattern: \S+
+  SesFromEmail:
+    Type: String
+    Default: outreach@octopodai.app
+    Description: Verified SES sender (must match email-service-stack SesFromEmail)
   DomainName:
     Type: String
     Default: octopodai.app
@@ -178,6 +186,19 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/cohere.*'
                   - !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-*'
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                  - sqs:GetQueueUrl
+                Resource:
+                  - !ImportValue
+                    'Fn::Sub': '${EmailServiceStackName}-email-queue-arn'
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: '*'
 
   # ---------------------------------------------------------------------------
   # CloudWatch Log Group
@@ -300,6 +321,15 @@ Resources:
             - Name: COGNITO_APP_CLIENT_ID
               Value: !ImportValue
                 'Fn::Sub': 'octopod-cognito-FrontendAppClientId'
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: SES_FROM_EMAIL
+              Value: !Ref SesFromEmail
+            - Name: SQS_EMAIL_QUEUE_URL
+              Value: !ImportValue
+                'Fn::Sub': '${EmailServiceStackName}-email-queue-url'
+            - Name: SQS_EMAIL_MESSAGE_GROUP
+              Value: !Sub '${ProjectName}-${Environment}-email-group'
 
           # Sensitive values — resolved from Secrets Manager at task startup
           Secrets:

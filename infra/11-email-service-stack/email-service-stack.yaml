@@ -1,19 +1,123 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: SQS FIFO queue + Lambda for sending emails via AWS SES.
+Description: SES domain identity + DKIM/SPF/DMARC DNS + SQS FIFO queue + Lambda for sending emails.
 
 Parameters:
   ProjectName:
     Type: String
-    Default: octopod
+    Default: octopodai
   Environment:
     Type: String
     Default: dev
     AllowedValues: [dev, staging, prod]
+  SenderDomain:
+    Type: String
+    Default: octopodai.app
+    Description: Domain to verify in SES (must have a Route53 hosted zone)
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Default: Z01109651O85TIUV7ZIYT
+    Description: Route53 hosted zone ID for SenderDomain (used for DKIM/SPF/DMARC records)
   SesFromEmail:
     Type: String
-    Description: Verified SES sender email address.
+    Default: outreach@octopodai.app
+    Description: Verified SES sender email address (must match SenderDomain).
 
 Resources:
+  # ── SES Domain Identity ────────────────────────────────────────────
+  # Verifies SenderDomain in SES + enables DKIM signing.
+  SesDomainIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref SenderDomain
+      DkimAttributes:
+        SigningEnabled: true
+      MailFromAttributes:
+        MailFromDomain: !Sub "bounce.${SenderDomain}"
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+
+  # ── DKIM CNAME records (3) — SES auto-emits DKIM token attributes ─
+  # Once these resolve in DNS, SES auto-marks the domain as verified.
+  DkimRecord1:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt SesDomainIdentity.DkimDNSTokenName1
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt SesDomainIdentity.DkimDNSTokenValue1
+
+  DkimRecord2:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt SesDomainIdentity.DkimDNSTokenName2
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt SesDomainIdentity.DkimDNSTokenValue2
+
+  DkimRecord3:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt SesDomainIdentity.DkimDNSTokenName3
+      Type: CNAME
+      TTL: '600'
+      ResourceRecords:
+        - !GetAtt SesDomainIdentity.DkimDNSTokenValue3
+
+  # ── SPF for the MAIL FROM subdomain (bounce handling) ──────────────
+  MailFromSpfRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "bounce.${SenderDomain}"
+      Type: TXT
+      TTL: '600'
+      ResourceRecords:
+        - '"v=spf1 include:amazonses.com -all"'
+
+  # ── SPF for the apex domain (so direct sends from @octopodai.app pass) ─
+  # NOTE: if octopodai.app already has an SPF TXT record (e.g. for Google
+  # Workspace), this will collide. CFN will fail; in that case merge
+  # manually instead and remove this resource.
+  ApexSpfRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref SenderDomain
+      Type: TXT
+      TTL: '600'
+      ResourceRecords:
+        - '"v=spf1 include:amazonses.com -all"'
+
+  # ── DMARC policy ───────────────────────────────────────────────────
+  # quarantine = mark suspicious mail as spam (don't bounce). Tighten
+  # to "reject" once you've confirmed no false positives via the
+  # rua= aggregate reports.
+  DmarcRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "_dmarc.${SenderDomain}"
+      Type: TXT
+      TTL: '600'
+      ResourceRecords:
+        - !Sub '"v=DMARC1; p=quarantine; rua=mailto:dmarc@${SenderDomain}; ruf=mailto:dmarc@${SenderDomain}; fo=1"'
+
+  # ── MAIL FROM domain MX (bounce handling) ──────────────────────────
+  MailFromMxRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub "bounce.${SenderDomain}"
+      Type: MX
+      TTL: '600'
+      ResourceRecords:
+        - "10 feedback-smtp.us-west-2.amazonses.com"
+
+
   # ── Dead-Letter Queue ──────────────────────────────────────────────
   EmailDeadLetterQueue:
     Type: AWS::SQS::Queue

@@ -1,5 +1,7 @@
 [
-  {"ParameterKey": "ProjectName", "ParameterValue": "octopod"},
+  {"ParameterKey": "ProjectName", "ParameterValue": "octopodai"},
   {"ParameterKey": "Environment", "ParameterValue": "dev"},
-  {"ParameterKey": "SesFromEmail", "ParameterValue": "outreach@octopod.ai"}
+  {"ParameterKey": "SenderDomain", "ParameterValue": "octopodai.app"},
+  {"ParameterKey": "HostedZoneId", "ParameterValue": "Z01109651O85TIUV7ZIYT"},
+  {"ParameterKey": "SesFromEmail", "ParameterValue": "outreach@octopodai.app"}
 ]
