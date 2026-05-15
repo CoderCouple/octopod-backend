@@ -193,7 +193,7 @@ Resources:
                   - sqs:GetQueueUrl
                 Resource:
                   - !ImportValue
-                    'Fn::Sub': '${EmailServiceStackName}-email-queue-arn'
+                    'Fn::Sub': '${ProjectName}-${Environment}-email-queue-arn'
               - Effect: Allow
                 Action:
                   - ses:SendEmail
@@ -327,7 +327,7 @@ Resources:
               Value: !Ref SesFromEmail
             - Name: SQS_EMAIL_QUEUE_URL
               Value: !ImportValue
-                'Fn::Sub': '${EmailServiceStackName}-email-queue-url'
+                'Fn::Sub': '${ProjectName}-${Environment}-email-queue-url'
             - Name: SQS_EMAIL_MESSAGE_GROUP
               Value: !Sub '${ProjectName}-${Environment}-email-group'
 

@@ -180,7 +180,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${ProjectName}-${Environment}-email-sender"
       Runtime: python3.11
-      Handler: handler.handler
+      Handler: index.handler  # CFN inline ZipFile creates index.py
       MemorySize: 128
       Timeout: 300
       Role: !GetAtt EmailSenderLambdaRole.Arn
